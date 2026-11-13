@@ -33,7 +33,13 @@
 
 enum { EMULATED_PSP_SIZE = 256,
        EMULATED_NEAR_SIZE = 16 * 213,
+#ifdef __3DS__
+       /* Extra virtual DOS memory on 3DS (no change to native heap).
+        * Conventional+EMS remains within the 1 MiB segment-address space. */
+       EMULATED_CONVENTIONAL_SIZE = 768 * 1024,
+#else
        EMULATED_CONVENTIONAL_SIZE = 619 /*640*/ * 1024,
+#endif
        EMULATED_EMS_SIZE = 65536 };
 
 extern uint32_t g_be_current_exeTotalMem;

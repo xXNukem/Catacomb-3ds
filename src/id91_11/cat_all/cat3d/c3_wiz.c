@@ -20,6 +20,9 @@
 // C3_WIZ.C
 
 #include "c3_def.h"
+#ifdef __3DS__
+#include "cat3ds_dualscreen.h"
+#endif
 //#pragma hdrstop
 
 REFKEEN_NS_B
@@ -1297,6 +1300,12 @@ void ReadScroll (id0_int_t scroll)
 		if (walldirectory[i])
 			MM_SetPurge ((memptr *)&walldirectory[i],3);
 
+#ifdef __3DS__
+    /* The scroll is a 2D modal document, NOT part of either eye's world.
+     * Prevent the previous left-eye world image from being composited
+     * with the new right-eye scroll and causing painful double vision. */
+    Cat3DS_DualScreenSetModalOverlay(1);
+#endif
 	CA_CacheGrChunk (SCROLLTOPPIC);
 	CA_CacheGrChunk (SCROLL1PIC + scroll);
 	VW_DrawPic (0,0,SCROLLTOPPIC);
@@ -1329,6 +1338,9 @@ void ReadScroll (id0_int_t scroll)
 	IN_Ack();
 	// REFKEEN - Alternative controllers support
 	BE_ST_AltControlScheme_Pop();
+#ifdef __3DS__
+    Cat3DS_DualScreenSetModalOverlay(0);
+#endif
 
 }
 

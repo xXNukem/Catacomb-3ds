@@ -233,6 +233,10 @@ void BEL_ST_AltControlScheme_CleanUp(void)
 
 void BEL_ST_AltControlScheme_ConditionallyShowOnScreenControls(void)
 {
+#ifdef __3DS__
+	/* Keep controller mappings but never construct virtual control textures. */
+	return;
+#endif
 	if (g_sdlControllerMappingActualCurr == &g_beStControllerMappingTextInput)
 	{
 		extern void BEL_ST_PrepareToShowTextInputUI(void);

@@ -946,6 +946,18 @@ void RefKeen_PrepareAltControllerScheme(void)
   #endif
 #endif
 	CheckNonKeyMappings(BE_ST_CTRL_BIND_CAT3D_DEBUGKEYS, &g_ingame_but_debug_keys_map);
+#ifdef __3DS__
+	/* Physical 3DS pad: D-pad duplicates Circle Pad, L also holds strafe,
+	 * START opens the original game control panel, SELECT pauses.
+	 * Use the game's existing action bindings, never synthetic key events. */
+	g_ingame_altcontrol_mapping_gameplay.pbuttons[BE_ST_CTRL_BUT_DPAD_UP] = g_ingame_but_up_map;
+	g_ingame_altcontrol_mapping_gameplay.pbuttons[BE_ST_CTRL_BUT_DPAD_DOWN] = g_ingame_but_down_map;
+	g_ingame_altcontrol_mapping_gameplay.pbuttons[BE_ST_CTRL_BUT_DPAD_LEFT] = g_ingame_but_left_map;
+	g_ingame_altcontrol_mapping_gameplay.pbuttons[BE_ST_CTRL_BUT_DPAD_RIGHT] = g_ingame_but_right_map;
+	g_ingame_altcontrol_mapping_gameplay.pbuttons[BE_ST_CTRL_BUT_LSHOULDER] = g_ingame_but_strafe_map;
+	g_ingame_altcontrol_mapping_gameplay.pbuttons[BE_ST_CTRL_BUT_START] = (BE_ST_ControllerSingleMap){BUT_BACK_MAP};
+	g_ingame_altcontrol_mapping_gameplay.pbuttons[BE_ST_CTRL_BUT_BACK] = (BE_ST_ControllerSingleMap){BUT_PAUSE_MAP};
+#endif
 
 	// HACK (leave US_LineInput this way)
 	g_beStControllerMappingTextInput.defaultMapping.mapClass = BE_ST_CTRL_MAP_KEYSCANCODE;

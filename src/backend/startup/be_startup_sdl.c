@@ -80,6 +80,22 @@ void BE_ST_InitCommon(void)
 	BEL_ST_InitKeyMap();
 
 	BEL_ST_ParseConfigFiles();
+#ifdef __3DS__
+	/* Catacomb 3DS: physical controls, independent of legacy desktop cfg.
+	 * All changes are compile-time 3DS-only; ReflectionHLE remains original. */
+	g_refKeenCfg.altControlScheme = true;
+	g_refKeenCfg.touchInputToggle = TOUCHINPUT_OFF;
+	g_refKeenCfg.isBilinear = false; /* EGA pixels; avoid extra filtering */
+	g_refKeenCfg.cat3d.useLeftStick = true;
+	g_refKeenCfg.cat3d.analogMotion = false;
+	g_refKeenCfg.cat3d.binds[BE_ST_CTRL_BIND_CAT3D_FIRE].pad = BE_ST_CTRL_BUT_A;
+	g_refKeenCfg.cat3d.binds[BE_ST_CTRL_BIND_CAT3D_STRAFE].pad = BE_ST_CTRL_BUT_B;
+	g_refKeenCfg.cat3d.binds[BE_ST_CTRL_BIND_CAT3D_DRINK].pad = BE_ST_CTRL_BUT_X;
+	g_refKeenCfg.cat3d.binds[BE_ST_CTRL_BIND_CAT3D_BOLT].pad = BE_ST_CTRL_BUT_Y;
+	g_refKeenCfg.cat3d.binds[BE_ST_CTRL_BIND_CAT3D_NUKE].pad = BE_ST_CTRL_EXTRA_BUT_LTRIGGER;
+	g_refKeenCfg.cat3d.binds[BE_ST_CTRL_BIND_CAT3D_FASTTURN].pad = BE_ST_CTRL_BUT_RSHOULDER;
+	g_refKeenCfg.cat3d.binds[BE_ST_CTRL_BIND_CAT3D_SCROLLS].pad = BE_ST_CTRL_EXTRA_BUT_RTRIGGER;
+#endif
 	// SDL_AddGamepadMappingsFromFile exists, but we try
 	// opening the file from a specific path like other files.
 	FILE *fp = BE_Cross_open_additionalfile_for_reading("gamecontrollerdb.txt");

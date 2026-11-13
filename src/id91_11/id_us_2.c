@@ -36,6 +36,10 @@
 
 REFKEEN_NS_B
 
+#if defined(__3DS__) && defined(REFKEEN_VER_CAT3D)
+extern id0_int_t Cat3DS_GetSaveLevel(void);
+#endif
+
 //      Special imports
 extern  id0_boolean_t         showscorebox;
 #ifdef  KEEN
@@ -1361,8 +1365,13 @@ USL_DoSaveGame(UserItem id0_far *item)
 	BE_FILE_T         file;
 	SaveGame        *game;
 
+#if defined(__3DS__) && defined(REFKEEN_VER_CAT3D)
+	BottomS1 = "Saving game";
+	BottomS2 = "Please wait";
+#else
 	BottomS1 = "Type name";
 	BottomS2 = "Enter accepts";
+#endif
 	USL_DrawCtlPanel();
 
 	n = item - loadsavegamei;
@@ -1371,10 +1380,30 @@ USL_DoSaveGame(UserItem id0_far *item)
 	VWB_Bar(item->x + 1,item->y + 2,CtlPanelW - 12 - 2,7,BackColor);
 	game->oldtestoffset = refkeen_compat_id_us_printx_offset;
 	//game->oldtest = &PrintX;
+#if defined(__3DS__) && defined(REFKEEN_VER_CAT3D)
+	/* A save-slot selection confirms immediately on New 3DS. The descriptive
+	 * label is kept in the original save header (the filename remains the
+	 * compatible SAVEGAMn.C3D format). Never invoke the virtual keyboard. */
+	{
+		time_t now = time(NULL);
+		struct tm *when = now == (time_t)-1 ? NULL : localtime(&now);
+		if (when)
+			snprintf(game->name, sizeof(game->name),
+			         "Level %02d %04d-%02d-%02d %02d:%02d",
+			         Cat3DS_GetSaveLevel(), when->tm_year + 1900,
+			         when->tm_mon + 1, when->tm_mday,
+			         when->tm_hour, when->tm_min);
+		else
+			snprintf(game->name, sizeof(game->name),
+			         "Level %02d", Cat3DS_GetSaveLevel());
+	}
+	ok = true;
+#else
 	ok = US_LineInput(item->x + 2,item->y + 2,
 						game->name,game->present? game->name : id0_nil_t,
 						true,MaxGameName,
 						CtlPanelW - 22);
+#endif
 	if (!strlen(game->name))
 		strcpy(game->name,"Untitled");
 	if (ok)

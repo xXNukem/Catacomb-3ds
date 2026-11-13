@@ -29,6 +29,19 @@
 //#pragma hdrstop
 
 REFKEEN_NS_B
+#ifdef __3DS__
+// Share this const with c3_asm.c inside each C++ game namespace.
+extern const id0_unsigned_t screenbwide;
+#endif
+
+
+#ifdef __3DS__
+/* Defined in Catacomb 3-D's c3_draw.c. Only the native stereo renderer
+ * enables per-screen-column sprite clipping; original 2D is untouched. */
+#ifndef REFKEEN_VER_CATADVENTURES
+extern int cat3dsStereoOcclusionEnabled;
+#endif
+#endif
 
 //const	id0_unsigned_t	viewheight = 144;
 const	id0_unsigned_t	screenbwide = 40;
@@ -782,15 +795,38 @@ void ScaleShape (id0_int_t xcenter, t_compshape id0_seg *compshape, id0_unsigned
 			Quit ("ScaleShape: codehandle past end!");
 #endif
 		id0_unsigned_t egaDestOff = ((id0_unsigned_t)pixel>>3) + bufferofs;
-		// scale the line of pixels
-		ExecuteCompShape((id0_byte_t *)compshape + (*codehandle), (id0_byte_t *)comptable, egaDestOff, (id0_byte_t *)compshape, bitmasks1[pixel&7][pixwidth-1]);
-		if (bitmasks2[pixel&7][pixwidth-1])
+		id0_byte_t leftMask = bitmasks1[pixel&7][pixwidth-1];
+		id0_byte_t rightMask = bitmasks2[pixel&7][pixwidth-1];
+#if defined(__3DS__) && !defined(REFKEEN_VER_CATADVENTURES)
+        if (cat3dsStereoOcclusionEnabled)
+        {
+            /* The DOS scaler only checks zbuffer at the start and end
+               of a sprite. A raycast wall may occlude its middle (corners).
+               Mask those individual destination pixels as well, without
+               altering the compiled sprite scaler or drawing over walls. */
+            for (int sx = pixel; sx < pixel + pixwidth; ++sx)
+            {
+                if (zbuffer[sx] > scale)
+                {
+                    const id0_byte_t bit = (id0_byte_t)(0x80u >> (sx & 7));
+                    if ((sx >> 3) == (pixel >> 3))
+                        leftMask &= (id0_byte_t)~bit;
+                    else
+                        rightMask &= (id0_byte_t)~bit;
+                }
+            }
+        }
+#endif
+        if (leftMask)
+            ExecuteCompShape((id0_byte_t *)compshape + (*codehandle),
+                (id0_byte_t *)comptable, egaDestOff,
+                (id0_byte_t *)compshape, leftMask);
+		if (rightMask)
 		{
-			//
-			// draw a second byte for vertical strips that cross two bytes
-			//
 			++egaDestOff;
-			ExecuteCompShape((id0_byte_t *)compshape + (*codehandle), (id0_byte_t *)comptable, egaDestOff, (id0_byte_t *)compshape, bitmasks2[pixel&7][pixwidth-1]);
+            ExecuteCompShape((id0_byte_t *)compshape + (*codehandle),
+                (id0_byte_t *)comptable, egaDestOff,
+                (id0_byte_t *)compshape, rightMask);
 		}
 #if 0
 		asm	mov	bx,[pixel]

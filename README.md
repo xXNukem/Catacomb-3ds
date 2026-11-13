@@ -1,127 +1,119 @@
-# ReflectionHLE
+<div align="center">
 
-ReflectionHLE, known for years as Reflection Keen, is a project consisting
-of source ports of DOS games, all being inspired by the Chocolate Doom port.
-These ports use a common codebase, consisting of the ReflectionHLE backend
-and third-party code.
+<img src="platform/3ds/original/icon.png" alt="Catacomb 3DS" width="96">
 
-The source ports in question are:
-- Reflection Keen Dreams (KDreams), a Keen Dreams port.
-- Reflection Catacomb 3-D (Cat3D), which includes ports of
-Catacomb 3-D (The Descent) and The Catacomb Adventure Series.
-- Reflection Wolfenstein 3D (Wolf3D), covering ports of Wolfenstein 3D,
-Spear of Destiny and Super 3-D Noah's Ark (DOS version).
-- Reflection BioMenace (BMenace), a port of BioMenace, aka Bio Menace.
+# Catacomb 3DS
 
-## Terms of use
+**Unofficial New Nintendo 3DS port of Catacomb 3-D and Catacomb Abyss.**
 
-All corresponding license documents should be found under LICENSES.
+[![Platform](https://img.shields.io/badge/NEW_NINTENDO-3DS-253a2b?style=for-the-badge&labelColor=102016&color=3fbd6a)](https://www.nintendo.com/)
+![Status](https://img.shields.io/badge/STATUS-WORK%20IN%20PROGRESS-151515?style=for-the-badge&labelColor=501119&color=fe4457)
 
-Since the covered ports are based on multiple codebases with
-varying licenses, the terms are described for each source port
-as a whole, as well as the differing components.
+</div>
 
-Note that these terms do not cover any original game data,
-which should be obtained separately.
+---
 
-The terms applying to the source ports:
+<div align="center">
 
-- Reflection KDreams, Reflection Cat3D, Reflection Wolf3D
-and Reflection BMenace are all released under the GNU GPLv2+.
-See gpl-2.0.txt for more details.
+## ☕ Support the project
 
-The terms applying to each component separately:
+If you enjoy the port and want to buy me a coffee, you can do it here. Every bit helps with future updates and projects. No pressure, of course.
 
-- The ported Keen Dreams, Catacomb 3-D, The Catacomb Adventures Series and
-Wolfenstein 3D codebases are released under the GNU GPLv2+. See gpl-2.0.txt.
+<a href="https://ko-fi.com/xxnukem"><img src="https://ko-fi.com/img/githubbutton_sm.svg" alt="Support xXNukem on Ko-fi" height="48"></a>
 
-- The ported Wolfenstein 3D code is also available under the original
-terms for the Wolfenstein 3D sources from 1995. See id-wolf3d.txt.
+**[ko-fi.com/xxnukem](https://ko-fi.com/xxnukem)**
 
-- The reconstructed BioMenace sources, based in part on game and
-actor code from Keen Dreams, ID Engine files from Catacomb 3-D and the text
-view code from Wolfenstein 3D, had the GNU GPLv2+ assigned by `K1n9_Duk3`.
-These sources were further used under permission for a commercial project,
-BioMenace Remastered, while also applying the original license granted
-to Jim Norwood back in the 1990s.
-As for ReflectionHLE, The assumption was that the reconstructed
-sources could be used under the GNU GPLv2+. See gpl-2.0.txt.
+</div>
 
-- The ReflectionHLE backend is released under the 3-Clause BSD License.
-See bsd-3-clause-template.txt for a general license template. For the exact
-contents you should consult the top of any relevant file from the source code,
-although the template's form was originally used as a base.
+---
 
-- Nuked-OPL3-fast is released under the GNU LGPLv2.1+. See lgpl-2.1.txt.
+## What is Catacomb 3DS?
 
-- The included depklite implementation, a modification of ExeUnpacker,
-is released under the MIT License. See mit-opentesarena.txt for details.
+**Catacomb 3DS** is an unofficial homebrew port of **Catacomb 3-D** and **Catacomb Abyss** for **New Nintendo 3DS**.
 
-- The included CRC-32 implementation is in the public domain. The same
-applies to the modified unlzexe source (based on UNLZEXE.DOC from v0.4).
+The project is based on [ReflectionHLE](https://github.com/ReflectionHLE/ReflectionHLE), adapted to run natively on the 3DS with a custom frontend, dual-screen support, native controls and ongoing work on stereoscopic 3D.
 
-## How to run a game
+The goal is simple: make these early first-person fantasy shooters playable on real 3DS hardware in a way that feels natural on the console, while staying close to the original games.
 
-Note that ReflectionHLE does not include game data, which you'll have to
-obtain separately.
+## Current project status
 
-Depending on the environment (e.g., operating system) in which ReflectionHLE
-is used, you might be able to use the ReflectionHLE launcher and/or
-a command-line interface. Even if you prefer to skip the launcher,
-it may assist you when you want to tell ReflectionHLE where
-to locate compatible game data.
+This is still a **work in progress**.
 
-ReflectionHLE may autodetect existing game installations
-in specific locations which are internally scanned. You can
-also use the launcher to add other locations with game installations.
+Right now, the project is mainly focused on:
 
-### Using an application icon or executable
+- Getting **Catacomb 3-D** and **Catacomb Abyss** running properly on New Nintendo 3DS.
+- Adapting the games to the console's **two-screen layout**.
+- Adding **native 3DS controls**.
+- Improving presentation, compatibility and general usability.
+- Experimenting with **stereoscopic 3D**.
 
-If you start ReflectionHLE by pressing on an application icon or executable,
-the ReflectionHLE launcher should appear. Here, you can see which
-game versions are supported, and which game files are
-required for each such version.
+Current state in broad terms:
 
-In addition to autodetected game installations, you can use the launcher
-to select a directory with compatible game data. Once it's confirmed
-such data is found, it'll be remembered for later uses.
+- **Catacomb 3-D:** playable in the current port.
+- **Catacomb Abyss:** working, but still being refined.
+- **Other Catacomb titles:** not integrated yet as part of the public 3DS port.
 
-Note that if you use an external launcher or shortcut which adds additional
-command-line arguments, this may change the behaviors. More details are
-given under following instructions for using a command-line interface.
+Some systems are still under active work, especially menus, save handling, presentation details and overall polish.
 
-### Using a command-line interface
+## Features
 
-You can also start ReflectionHLE from a command-line interface,
-like Windows' Command Prompt. Doing so without passing additional arguments
-should generally be the same as using an application icon, albeit there
-can be differences that vary by the environment.
+- **Native New Nintendo 3DS homebrew port**
+- Support for **Catacomb 3-D** and **Catacomb Abyss**
+- **Dual-screen layout** adapted for the console
+- **Native 3DS controls**
+- Work-in-progress **stereoscopic 3D**
+- Real hardware oriented development and testing
+- Based on the open-source **ReflectionHLE** project
 
-If you pass at least one additional argument, a game can be started without
-going through the launcher, unless you use -fulllauncher or -softlauncher.
+## Controls
 
-If -passorigargs is used, the arguments that follow it are passed
-to the game as-is. The exact meanings of them can vary by the game.
+The control setup is being adapted specifically for the 3DS.
 
-You can use -gamever <VER> for selecting a specific game version.
-To show a list of supported game versions, use -listgamevers
-as the only command-line argument.
+At the moment, the port includes native input handling and ongoing menu/control work. The final public control scheme may still change as the project is refined.
 
-To read about more options, you can use -? as the sole command-line argument.
+## Game data
 
-### Skipping the launcher
+**No original game data is included in this repository.**
 
-If you simply want to start a game while skipping the launcher,
-you can use the command-line arguments -gamever <VER>,
-or alternatively, use -passorigargs with no other argument.
+You must provide your own original game files in order to run the port.
 
-Note that you should first make sure that ReflectionHLE knows where to
-find compatible game data. See above for locating data via the launcher.
+The repository only contains the source code and supporting files for the 3DS port.
 
-## How to build from the source code
+## Build notes
 
-See COMPILING.md.
+This repository contains the source code for the port, along with 3DS-specific platform code, tests and technical notes.
 
-## Acknowledgements
+Because the project is still evolving, the build process and setup may continue to change while the port is being stabilized.
 
-See AUTHORS.md.
+## Known limitations
+
+At this stage, expect rough edges.
+
+Known areas still being worked on include:
+
+- menu flow and presentation
+- save/load behaviour
+- compatibility details between supported game versions
+- stereoscopic 3D tuning
+- performance and visual polish in some situations
+
+## Credits
+
+**Nintendo 3DS port:** Carlos de la Barrera Pérez ([xXNukem](https://github.com/xXNukem))
+
+**Original open-source base:** [ReflectionHLE](https://github.com/ReflectionHLE/ReflectionHLE)
+
+**Original games:** Catacomb series by their original authors and rights holders.
+
+This is an independent, unofficial homebrew project. It is not affiliated with Nintendo or the original rights holders.
+
+## License and original project
+
+This repository builds on top of ReflectionHLE and keeps the corresponding original notices and license material.
+
+See:
+
+- [README_UPSTREAM.md](README_UPSTREAM.md)
+- [LICENSES/](LICENSES)
+
+Please also note that **original game assets are not included** and remain the property of their respective rights holders.

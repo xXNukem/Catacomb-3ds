@@ -47,6 +47,9 @@ EMS / XMS unmanaged routines
 */
 
 #include "id_heads.h"
+#ifdef __3DS__
+#include <stdio.h>
+#endif
 
 //#pragma hdrstop
 
@@ -54,6 +57,11 @@ EMS / XMS unmanaged routines
 //#pragma warn -use
 
 REFKEEN_NS_B
+#ifdef __3DS__
+// Declared once per game namespace (definition in id_ca.c).
+extern int g_cat3ds_active_graphic_chunk;
+#endif
+
 
 // REFKEEN - Use macro for all titles, with the original message
 
@@ -796,6 +804,19 @@ xmsskip:
 	mmrover = mmhead;		// start looking for space after low block
 
 	MM_GetPtr (&bufferseg,BUFFERSIZE);
+#ifdef __3DS__
+    {
+        FILE *f = fopen("sdmc:/3ds/catacomb-3ds/memory-report.txt", "w");
+        if (f)
+        {
+            fprintf(f, "Original Catacomb 3-D / ReflectionHLE 3DS memory report\n");
+            fprintf(f, "MM_Startup: near=%ld far=%ld EMS=%ld free=%ld\n",
+                    (long)mminfo.nearheap, (long)mminfo.farheap,
+                    (long)mminfo.EMSmem, (long)MM_TotalFree());
+            fclose(f);
+        }
+    }
+#endif
 }
 
 //==========================================================================
@@ -837,6 +858,19 @@ void MM_Shutdown (void)
 
 void MM_GetPtr (memptr *baseptr,id0_unsigned_long_t size)
 {
+#ifdef __3DS__
+    if (size > (1024UL * 1024UL))
+    {
+        FILE *f = fopen("sdmc:/3ds/catacomb-3ds/memory-report.txt", "a");
+        if (f)
+        {
+            fprintf(f, "INVALID MM REQUEST: bytes=%lu caller=%p active EGA chunk=%d\n",
+                (unsigned long)size, __builtin_return_address(0), g_cat3ds_active_graphic_chunk);
+            fclose(f);
+        }
+        Quit("MM_GetPtr: invalid oversized allocation (3DS)");
+    }
+#endif
 	mmblocktype id0_far *scan,id0_far *lastscan,id0_far *endscan
 				,id0_far *purge,id0_far *next;
 	id0_int_t			search;
@@ -919,6 +953,32 @@ void MM_GetPtr (memptr *baseptr,id0_unsigned_long_t size)
 		}
 	}
 
+#ifdef __3DS__
+    {
+        FILE *f = fopen("sdmc:/3ds/catacomb-3ds/memory-report.txt", "a");
+        if (f)
+        {
+            id0_unsigned_t maxGap = 0;
+            mmblocktype *block = mmhead;
+            while (block && block->next)
+            {
+                id0_unsigned_t end = block->start + block->length;
+                id0_unsigned_t gap = block->next->start - end;
+                if (gap > maxGap) maxGap = gap;
+                block = block->next;
+            }
+            fprintf(f, "MM_GetPtr FAILED: requested=%lu free=%ld unused=%ld largest_gap=%lu\n",
+                    (unsigned long)size, (long)MM_TotalFree(),
+                    (long)MM_UnusedMemory(), (unsigned long)maxGap * 16UL);
+            fprintf(f, "MM caller=%p, active EGA chunk=%d\n",
+                    __builtin_return_address(0), g_cat3ds_active_graphic_chunk);
+            fprintf(f, "MM totals: near=%ld far=%ld EMS=%ld XMS=%ld\n",
+                    (long)mminfo.nearheap, (long)mminfo.farheap,
+                    (long)mminfo.EMSmem, (long)mminfo.XMSmem);
+            fclose(f);
+        }
+    }
+#endif
 	if (bombonerror)
 		// REFKEEN - Always use macro, but with a game-specific message
 #if (defined REFKEEN_VER_CATADVENTURES) && !(defined REFKEEN_VER_CATABYSS)

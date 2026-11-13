@@ -1,5 +1,6 @@
 #include <dirent.h>
 #include "be_filesystem_dir.h"
+#include <stddef.h> // NULL is also needed when compiling the unified C++ engine
 
 BE_DIR_T BEL_Cross_OpenDir(const char *dirname) { return opendir(dirname); }
 

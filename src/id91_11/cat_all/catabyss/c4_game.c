@@ -532,6 +532,14 @@ static  const id0_char_t    *levelnames[] =
 					"Nolan's Nasty",
 				};
 
+#if defined(__3DS__) && defined(REFKEEN_VER_CATABYSS)
+const id0_char_t *Cat3DS_AbyssLevelName(void)
+{
+    return (gamestate.mapon >= 0 && gamestate.mapon < BE_Cross_ArrayLen(levelnames))
+        ? levelnames[gamestate.mapon] : "Unknown level";
+}
+#endif
+
 void DrawEnterScreen (void)
 {
 	id0_int_t width;

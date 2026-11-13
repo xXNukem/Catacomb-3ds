@@ -42,6 +42,10 @@
 #include "be_video_emu.h"
 #include "be_video_textures.h"
 #include "be_video_ui.h"
+#ifdef __3DS__
+#include "cat3ds_dualscreen.h"
+extern bool BEL_ST_RenderNative3DSViewport(BE_ST_Texture *texture);
+#endif
 #include "../input/be_input_controller_mappings.h"
 
 // Some of these are also used in launcher
@@ -467,6 +471,9 @@ static void BEL_ST_FinishHostDisplayUpdate(void)
 {
 	g_sdlForceGfxControlUiRefresh = false;
 
+#ifndef __3DS__
+	/* Native 3DS has physical controls. Never composite desktop/mobile
+	 * touch pads or virtual controller textures on the game framebuffer. */
 	if (g_refKeenCfg.touchInputDebugging)
 	{
 		BEL_ST_SetDrawColor(0xBFFF0000); // Includes some alpha
@@ -504,6 +511,7 @@ static void BEL_ST_FinishHostDisplayUpdate(void)
 			BEL_ST_RenderFromTexture(g_sdlDebugKeysTexture, &g_sdlControllerDebugKeysRect);
 		}
 	}
+#endif /* !__3DS__ */
 
 	BEL_ST_UpdateWindow();
 }
@@ -648,6 +656,15 @@ static bool BEL_ST_UpdateTextureForEGAVGAMode(void)
 		}
 	}
 
+#ifdef __3DS__
+	/* CAT3DS_NATIVE_EGA_READ_FAST_V2: avoid full EGA cache compare
+	 * and copy during gameplay; menu path remains unchanged. */
+	if (g_sdlScreenMode == 0x0D && Cat3DS_DualScreenHasGameplayFrame())
+	{
+		g_sdlDoRefreshGfxOutput = false;
+		return true;
+	}
+#endif
 	bool doUpdate = memcmp(g_sdlHostScrMemCache.egaGfx, g_sdlHostScrMem.egaGfx, sizeof(g_sdlHostScrMem.egaGfx));
 	memcpy(g_sdlHostScrMemCache.egaGfx, g_sdlHostScrMem.egaGfx, sizeof(g_sdlHostScrMem.egaGfx));
 	if (g_overscanBorderColorIndex != g_overscanBorderColorIndexCache)
@@ -678,6 +695,15 @@ static bool BEL_ST_UpdateTextureForEGAVGAMode(void)
 		}
 	}
 
+#ifdef __3DS__
+	/* CAT3DS_NATIVE_EGA_UPLOAD_SKIP_V1: indexed pixels are already
+	 * available. The native 3DS compositor consumes them directly. */
+	if (g_sdlScreenMode == 0x0D && Cat3DS_DualScreenHasGameplayFrame())
+	{
+		g_sdlDoRefreshGfxOutput = false;
+		return true;
+	}
+#endif
 	int pitchPix;
 	uint32_t *currPixPtr = (uint32_t *)BEL_ST_LockTexture(g_sdlTexture, &pitchPix),
 	         *currRowPtr = currPixPtr;
@@ -716,6 +742,18 @@ void BEL_ST_UpdateHostDisplay(void)
 	if (!ret)
 		return;
 
+#ifdef __3DS__
+	/* CAT3DS_NATIVE_EGA_PRESENT_V1: gameplay avoids SDL texture
+	 * upload, software scaling, render target composition and present. */
+	if (g_sdlScreenMode == 0x0D && Cat3DS_DualScreenHasGameplayFrame())
+	{
+		Cat3DS_DualScreenPresent(g_sdlHostScrMem.egaGfx, g_sdlTexWidth,
+		                           g_sdlEGACurrBGRAPalette);
+		g_sdlForceGfxControlUiRefresh = false;
+		g_be_sdlLastRefreshTicks = BEL_ST_GetTicksMS();
+		return;
+	}
+#endif
 	BEL_ST_SetDrawColor(0xFF000000);
 	BEL_ST_RenderClear();
 	BEL_ST_SetDrawColor(g_sdlEGALastBGRABorderColor);

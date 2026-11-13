@@ -20,6 +20,9 @@
 // C3_GAME.C
 
 #include "c3_def.h"
+#ifdef __3DS__
+#include "cat3ds_dualscreen.h"
+#endif
 //#pragma hdrstop
 
 #ifdef PROFILE
@@ -373,6 +376,12 @@ static  const id0_char_t    *levelnames[] =
 void DrawEnterScreen (void)
 {
 	id0_int_t     x,y;
+#ifdef __3DS__
+	/* The plaque is a 2D level title, not a raycast eye image.
+	 * Keep native RGB565 presentation active even while the new level
+	 * invalidates its last gameplay frame. */
+	Cat3DS_DualScreenBeginLevelTransition();
+#endif
 
 	VW_Bar(0,0,VIEWWIDTH,VIEWHEIGHT,9);     // Medium blue
 
@@ -533,6 +542,9 @@ void SetupGameLevel (void)
 // are in memory
 //
 	CA_LoadAllSounds ();
+#ifdef __3DS__
+	Cat3DS_DualScreenBeginLevel(gamestate.mapon, mapwidth, mapheight);
+#endif
 
 }
 
@@ -666,6 +678,9 @@ void Died (void)
 
 void NormalScreen (void)
 {
+#ifdef __3DS__
+	Cat3DS_DualScreenSetGameplay(0);
+#endif
 	 VW_SetSplitScreen (200);
 	 bufferofs = displayofs = SCREEN1START;
 	 VW_Bar(0,0,320,200,0);
@@ -686,6 +701,9 @@ void NormalScreen (void)
 
 void DrawPlayScreen (void)
 {
+#ifdef __3DS__
+	Cat3DS_DualScreenSetGameplay(1);
+#endif
 	id0_int_t     i/*,j,p,m*/;
 
 	screenpage = 0;
@@ -846,6 +864,17 @@ void LoadLatchMem (void)
 void FizzleFade (id0_unsigned_t source, id0_unsigned_t dest,
 	id0_unsigned_t width,id0_unsigned_t height, id0_boolean_t abortable)
 {
+#ifdef __3DS__
+	/* SDL3 currently presents the EGA framebuffer in software on 3DS.
+	 * The DOS pixel-by-pixel fade costs seconds per transition on hardware.
+	 * Keep the exact final frame while bypassing only the transitional effect. */
+	(void)abortable;
+	/* Copy the full 2D picture before switching the visible EGA page:
+	 * the old order briefly exposed a partially updated page. */
+	VW_ScreenToScreen (source,dest,width/8,height);
+	VW_SetScreen (dest,0);
+	return;
+#endif
 	id0_unsigned_t        drawofs,pagedelta;
 	id0_unsigned_char_t maskb[8] = {1,2,4,8,16,32,64,128};
 	id0_unsigned_t        x,y,p,frame;
@@ -1035,6 +1064,17 @@ void FizzleOut (id0_int_t showlevel)
 	if (showlevel)
 		DrawEnterScreen ();
 	FizzleFade(bufferofs,displayofs,VIEWWIDTH,VIEWHEIGHT,false);
+#ifdef __3DS__
+	if (showlevel)
+	{
+		/* Actually submit the complete original plaque on the native
+		 * flat screen, then leave it visible while the next map loads.
+		 * The expensive pixel-by-pixel DOS fizzle remains disabled. */
+		VW_UpdateScreen ();
+		BE_ST_ShortSleep ();
+		VW_WaitVBL (35);
+	}
+#endif
 }
 
 //==========================================================================

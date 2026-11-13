@@ -134,7 +134,7 @@ static inline int BE_Cross_isupper(int c)
 	return ((c >= 'A') && (c <= 'Z'));
 }
 
-static bool BE_Cross_isascii(char c)
+static inline __attribute__((unused)) bool BE_Cross_isascii(char c)
 {
   return (((unsigned)c >= 32) && ((unsigned)c < 127));
 }

@@ -20,6 +20,9 @@
 // C3_PLAY.C
 
 #include "c3_def.h"
+#ifdef __3DS__
+#include "cat3ds_dualscreen.h"
+#endif
 //#pragma hdrstop
 
 REFKEEN_NS_B
@@ -143,6 +146,11 @@ void CheckKeys (void)
 //
 	if (Paused)
 	{
+#ifdef __3DS__
+		/* PAUSED is a flat modal page over the frozen right-eye frame.
+		 * Never combine it with the captured left-eye world. */
+		Cat3DS_DualScreenSetModalOverlay(1);
+#endif
 		CenterWindow (8,3);
 		US_PrintCentered ("PAUSED");
 		VW_UpdateScreen ();
@@ -150,6 +158,10 @@ void CheckKeys (void)
 		IN_Ack();
 		SD_MusicOn();
 		Paused = false;
+#ifdef __3DS__
+		/* Next ThreeDRefresh rebuilds both world views from scratch. */
+		Cat3DS_DualScreenSetModalOverlay(0);
+#endif
 		if (MousePresent) BE_ST_GetEmuAccuMouseMotion(NULL, NULL); // Clear accumulated mouse movement
 		//if (MousePresent) Mouse(MDelta);	// Clear accumulated mouse movement
 	}

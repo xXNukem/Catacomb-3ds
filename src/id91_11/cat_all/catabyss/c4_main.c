@@ -30,6 +30,10 @@
 
 #include <time.h>
 #include <stdarg.h>
+#ifdef __3DS__
+#include <stdlib.h>
+#include <stddef.h>
+#endif
 
 #include "def.h"
 #include "gelib.h"
@@ -297,6 +301,39 @@ void NewGame (void)
 //===========================================================================
 
 #define RLETAG	0xABCD
+#ifdef __3DS__
+/* Validate a compressed save stream before the historical decompressor,
+ * which assumes that its source and destination are already well formed. */
+static id0_boolean_t Cat3DS_AbyssValidSavedMap(const id0_unsigned_t *src,
+                                               size_t compressedBytes,
+                                               size_t expandedBytes)
+{
+    size_t pos = 0, out = 0;
+    const size_t count = compressedBytes / 2;
+    const size_t expected = expandedBytes / 2;
+    if (!src || (compressedBytes & 1) || (expandedBytes & 1))
+        return false;
+    while (pos < count)
+    {
+        const id0_unsigned_t value = src[pos++];
+        size_t run = 1;
+        if (value == RLETAG)
+        {
+            if (pos + 2 > count)
+                return false;
+            run = src[pos++];
+            ++pos; /* repeated value */
+            if (!run)
+                return false;
+        }
+        if (run > expected - out)
+            return false;
+        out += run;
+    }
+    return out == expected;
+}
+#endif
+
 
 /*
 ==================
@@ -310,7 +347,12 @@ id0_boolean_t	SaveTheGame(BE_FILE_T file)
 {
 	id0_word_t	i,compressed,expanded;
 	objtype	*o;
-	memptr	bigbuffer;
+#ifdef __3DS__
+    id0_byte_t *bigbuffer;
+    size_t bufferCapacity;
+#else
+    memptr bigbuffer;
+#endif
 
 	if (BE_Cross_writeInt16LE(file, &FreezeTime) != 2)
 	//if (!CA_FarWrite(file,(void id0_far *)&FreezeTime,sizeof(FreezeTime)))
@@ -326,7 +368,16 @@ id0_boolean_t	SaveTheGame(BE_FILE_T file)
 		return(false);
 
 	expanded = mapwidth * mapheight * 2;
-	MM_GetPtr (&bigbuffer,expanded);
+#ifdef __3DS__
+    /* Worst case RLEW expansion: three words per input word.  Do not
+     * allocate an output buffer smaller than the encoder may write. */
+    bufferCapacity = (size_t)expanded * 3 + 2;
+    bigbuffer = expanded ? (id0_byte_t *)malloc(bufferCapacity) : NULL;
+    if (!bigbuffer)
+        return false;
+#else
+    MM_GetPtr (&bigbuffer,expanded);
+#endif
 
 	for (i = 0;i < 3;i+=2)	// Write planes 0 and 2
 	{
@@ -336,12 +387,23 @@ id0_boolean_t	SaveTheGame(BE_FILE_T file)
 		compressed = (id0_unsigned_t)CA_RLEWCompress ((id0_unsigned_t id0_huge *)mapsegs[i]
 			,expanded,((id0_unsigned_t id0_huge *)bigbuffer)+1,RLETAG);
 
-		*(id0_unsigned_t id0_huge *)bigbuffer = compressed;
+#ifdef __3DS__
+        if ((compressed & 1) || (size_t)compressed + 2 > bufferCapacity)
+        {
+            free(bigbuffer);
+            return false;
+        }
+#endif
+        *(id0_unsigned_t id0_huge *)bigbuffer = compressed;
 
 		if (BE_Cross_writeInt16LEBuffer(file, bigbuffer, compressed+2) != (id0_word_t)(compressed+2))
 		//if (!CA_FarWrite(file,(id0_byte_t id0_far *)bigbuffer,compressed+2) )
 		{
-			MM_FreePtr (&bigbuffer);
+		#ifdef __3DS__
+            free(bigbuffer);
+#else
+            MM_FreePtr (&bigbuffer);
+#endif
 			return(false);
 		}
 	}
@@ -351,11 +413,19 @@ id0_boolean_t	SaveTheGame(BE_FILE_T file)
 		if (!SaveObject(file, o))
 		//if (!CA_FarWrite(file,(void id0_far *)o,sizeof(objtype)))
 		{
-			MM_FreePtr (&bigbuffer);
+		#ifdef __3DS__
+            free(bigbuffer);
+#else
+            MM_FreePtr (&bigbuffer);
+#endif
 			return(false);
 		}
 
-	MM_FreePtr (&bigbuffer);
+#ifdef __3DS__
+    free(bigbuffer);
+#else
+    MM_FreePtr (&bigbuffer);
+#endif
 
 	return(true);
 }
@@ -376,7 +446,12 @@ id0_boolean_t	LoadTheGame(BE_FILE_T file)
 	objtype		/**obj,*/*prev,*next,*followed;
 	id0_unsigned_t	compressed,expanded;
 	id0_unsigned_t	id0_far *map,tile;
-	memptr		bigbuffer;
+#ifdef __3DS__
+    id0_byte_t *bigbuffer;
+    size_t bufferCapacity;
+#else
+    memptr bigbuffer;
+#endif
 
 	screenpage = 0;
 	FreeUpMemory();
@@ -406,29 +481,64 @@ id0_boolean_t	LoadTheGame(BE_FILE_T file)
 #endif
 
 	expanded = mapwidth * mapheight * 2;
-	MM_GetPtr (&bigbuffer,expanded);
+#ifdef __3DS__
+    bufferCapacity = (size_t)expanded * 3 + 2;
+    bigbuffer = expanded ? (id0_byte_t *)malloc(bufferCapacity) : NULL;
+    if (!bigbuffer)
+        return false;
+#else
+    MM_GetPtr (&bigbuffer,expanded);
+#endif
 
 	for (i = 0;i < 3;i+=2)	// Read planes 0 and 2
 	{
 		if (BE_Cross_readInt16LE(file, &compressed) != 2)
 		//if (!CA_FarRead(file,(id0_byte_t id0_far *)&compressed,sizeof(compressed)) )
 		{
-			MM_FreePtr (&bigbuffer);
+		#ifdef __3DS__
+            free(bigbuffer);
+#else
+            MM_FreePtr (&bigbuffer);
+#endif
 			return(false);
 		}
 
-		if (BE_Cross_readInt16LEBuffer(file, bigbuffer, compressed) != compressed)
+#ifdef __3DS__
+        if (!compressed || (compressed & 1) ||
+            (size_t)compressed > bufferCapacity)
+        {
+            free(bigbuffer);
+            return false;
+        }
+#endif
+        if (BE_Cross_readInt16LEBuffer(file, bigbuffer, compressed) != compressed)
 		//if (!CA_FarRead(file,(id0_byte_t id0_far *)bigbuffer,compressed) )
 		{
-			MM_FreePtr (&bigbuffer);
+		#ifdef __3DS__
+            free(bigbuffer);
+#else
+            MM_FreePtr (&bigbuffer);
+#endif
 			return(false);
 		}
 
-		CA_RLEWexpand ((id0_unsigned_t id0_huge *)bigbuffer,
+#ifdef __3DS__
+        if (!Cat3DS_AbyssValidSavedMap((const id0_unsigned_t *)bigbuffer,
+                                       compressed, expanded))
+        {
+            free(bigbuffer);
+            return false;
+        }
+#endif
+        CA_RLEWexpand ((id0_unsigned_t id0_huge *)bigbuffer,
 			(id0_unsigned_t id0_huge *)mapsegs[i],expanded,RLETAG);
 	}
 
-	MM_FreePtr (&bigbuffer);
+#ifdef __3DS__
+    free(bigbuffer);
+#else
+    MM_FreePtr (&bigbuffer);
+#endif
 //
 // copy the wall data to a data segment array again, to handle doors and
 // bomb walls that are allready opened

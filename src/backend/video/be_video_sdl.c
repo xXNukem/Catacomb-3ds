@@ -191,6 +191,20 @@ void BEL_ST_DestroyTexture(BE_ST_Texture *texture)
 	SDL_DestroyTexture((SDL_Texture *)texture);
 }
 
+#ifdef __3DS__
+bool BEL_ST_RenderNative3DSViewport(BE_ST_Texture *texture)
+{
+	/* Original Catacomb 3-D 264x144 camera only; direct crop of the
+	 * real ReflectionHLE texture, no reconstructed rendering. */
+	const SDL_FRect source = {0.0f, 0.0f, 264.0f, 144.0f};
+	int outWidth = 400, outHeight = 240;
+	SDL_GetCurrentRenderOutputSize(g_sdlRenderer, &outWidth, &outHeight);
+	const SDL_FRect destination = {0.0f, 0.0f, (float)outWidth, (float)outHeight};
+	return SDL_RenderTexture(g_sdlRenderer, (SDL_Texture *)texture,
+	                         &source, &destination);
+}
+#endif
+
 bool BEL_ST_RenderFromTexture(BE_ST_Texture *texture, const BE_ST_Rect *dst)
 {
 	bool ret;

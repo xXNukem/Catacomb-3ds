@@ -25,6 +25,11 @@
 #define VIEWWIDTH (33*8)
 #endif
 
+#ifdef __3DS__
+#include "backend/video/be_video_emu.h"
+#include "backend/video/be_video.h"
+#endif
+
 REFKEEN_NS_B
 
 //=================== Tables filled in by DrawVWall ==========================
@@ -217,8 +222,48 @@ EXTRN screenpage:WORD
 //
 //============================================================================
 
+/* CAT3DS_NATIVE_WALL_SCALER_V1: draw ReflectionHLE walls without the
+ * interpreted DOS x86 scaler. Only compiled on the Nintendo 3DS target. */
+#ifdef __3DS__
+#include "cat3ds_native_wall_scaler.h"
+#include "be_st_egavga_lookup_tables.h"
+extern const id0_unsigned_t screenbwide;
+static Cat3DS_WallRowMap cat3ds_wall_rows[MAXSCALE + 1];
+static const t_compscale *cat3ds_cached_scalers[MAXSCALE + 1];
+#endif
+
 void ScaleWalls(void)
 {
+#ifdef __3DS__
+    unsigned colNum = 0;
+    while (colNum < VIEWWIDTH) {
+        const unsigned pixwidth = wallwidth[colNum];
+        if (!pixwidth) { ++colNum; continue; }
+        /* Identical wall/offset selection and vanilla bug workaround. */
+        const unsigned scale = wallheight[colNum];
+        if (scale > MAXSCALE || !scaledirectory[scale]) {
+            colNum += pixwidth;
+            continue;
+        }
+        const t_compscale *scaler = scaledirectory[scale];
+        if (cat3ds_cached_scalers[scale] != scaler) {
+            Cat3DS_BuildWallRows(&cat3ds_wall_rows[scale],
+                scaler->start, scaler->width, (int)scale * 2, VIEWHEIGHT);
+            cat3ds_cached_scalers[scale] = scaler;
+        }
+        const uint8_t *wallSrcPtr =
+            (wallseg[colNum] ? wallseg[colNum] : g_be_cross_dosZeroSeg) + wallofs[colNum];
+        const unsigned egaDestOff = screenbyte[colNum] + bufferofs;
+        const unsigned masksPair = bitmasks[screenbit[colNum]/2 + pixwidth - 1];
+        Cat3DS_DrawWallRows(&cat3ds_wall_rows[scale],
+            ::g_sdlVidMem.A000.egaGfx, egaDestOff, screenbwide,
+            wallSrcPtr, (uint8_t)masksPair, (uint8_t)(masksPair >> 8),
+            g_be_st_lookup_egaplane_repeat,
+            g_be_st_lookup_egaplane_bitsmask);
+        colNum += pixwidth;
+    }
+    ::g_sdlDoRefreshGfxOutput = true;
+#else
 	id0_unsigned_t colNum = 0;
 	do
 	{
@@ -247,6 +292,7 @@ void ScaleWalls(void)
 		}
 		colNum += wallwidth[colNum];
 	} while (colNum < VIEWWIDTH);
+#endif /* __3DS__ */
 }
 
 #if 0

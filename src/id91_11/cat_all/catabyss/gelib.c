@@ -528,6 +528,207 @@ id0_long_t VerifyRewritable(const id0_char_t *filename)
 	return Verify(filename, true);
 }
 
+#if defined(__3DS__) && defined(REFKEEN_VER_CATABYSS)
+/* Abyss uses its original .SAV payload. Only the user interface and slot
+ * filename are changed; a small .INF sidecar stores human-readable labels. */
+#define CAT3DS_ABYSS_SLOTS 6
+
+extern const id0_char_t *Cat3DS_AbyssLevelName(void);
+
+typedef struct
+{
+    char magic[8];
+    char level[33];
+    char date[20];
+} Cat3DS_AbyssSlotInfo;
+
+static void Cat3DS_AbyssSlotFilename(int slot, const char *ext, char *out, size_t capacity)
+{
+    snprintf(out, capacity, "SAVEGAM%d.%s", slot, ext);
+}
+
+static id0_boolean_t Cat3DS_AbyssReadSlotInfo(int slot, Cat3DS_AbyssSlotInfo *info)
+{
+    char filename[16];
+    BE_FILE_T file;
+    Cat3DS_AbyssSlotFilename(slot, "INF", filename, sizeof(filename));
+    file = BE_Cross_open_rewritable_for_reading(filename);
+    if (!BE_Cross_IsFileValid(file))
+        return false;
+    const size_t read = BE_Cross_readInt8LEBuffer(file, info, sizeof(*info));
+    BE_Cross_close(file);
+    info->level[sizeof(info->level)-1] = '\0';
+    info->date[sizeof(info->date)-1] = '\0';
+    if (read != sizeof(*info) || memcmp(info->magic, "C3DSABS1", 8))
+        return false;
+    for (const char *p = info->level; *p; ++p)
+        if ((unsigned char)*p < 32 || (unsigned char)*p > 126)
+            return false;
+    for (const char *p = info->date; *p; ++p)
+        if ((unsigned char)*p < 32 || (unsigned char)*p > 126)
+            return false;
+    return true;
+}
+
+static void Cat3DS_AbyssWriteSlotInfo(int slot)
+{
+    Cat3DS_AbyssSlotInfo info = {};
+    memcpy(info.magic, "C3DSABS1", 8);
+    snprintf(info.level, sizeof(info.level), "%s", Cat3DS_AbyssLevelName());
+    time_t now = time(NULL);
+    const struct tm *when = now == (time_t)-1 ? NULL : localtime(&now);
+    if (when)
+        snprintf(info.date, sizeof(info.date), "%04d-%02d-%02d %02d:%02d",
+                 when->tm_year + 1900, when->tm_mon + 1, when->tm_mday,
+                 when->tm_hour, when->tm_min);
+    else
+        snprintf(info.date, sizeof(info.date), "Date unavailable");
+    char filename[16];
+    Cat3DS_AbyssSlotFilename(slot, "INF", filename, sizeof(filename));
+    BE_FILE_T file = BE_Cross_open_rewritable_for_overwriting(filename);
+    if (!BE_Cross_IsFileValid(file))
+        return;
+    BE_Cross_writeInt8LEBuffer(file, &info, sizeof(info));
+    BE_Cross_close(file);
+}
+
+static int Cat3DS_AbyssChooseSlot(id0_boolean_t saving)
+{
+    /* This is the same six-slot workflow used by Catacomb 3-D. It does not
+     * call US_LineInput or the SDL/3DS software keyboard. */
+    static const id0_char_t choiceKeys[] = {
+        sc_N, sc_Return, sc_N, sc_Y,
+        sc_UpArrow, sc_DownArrow, sc_LeftArrow, sc_RightArrow,
+        sc_Escape, 0
+    };
+    int selected = 0;
+    IN_ClearKeysDown();
+    VW_FixRefreshBuffer();
+    for (;;)
+    {
+        id0_char_t saveTitle[] = "SAVE GAME - SELECT SLOT";
+        id0_char_t loadTitle[] = "LOAD GAME - SELECT SLOT";
+        id0_char_t footer[] = "UP/DOWN  B OK  A BACK";
+        US_DrawWindow(2, 1, 36, 19);
+        US_Printxy(28, 17, saving ? saveTitle : loadTitle);
+        for (int i = 0; i < CAT3DS_ABYSS_SLOTS; ++i)
+        {
+            char filename[16], row[45];
+            Cat3DS_AbyssSlotInfo info = {};
+            Cat3DS_AbyssSlotFilename(i, "SAV", filename, sizeof(filename));
+            const id0_boolean_t present = VerifyRewritable(filename) != 0;
+            const id0_boolean_t hasInfo = present && Cat3DS_AbyssReadSlotInfo(i, &info);
+            const char *name = !present ? "Empty" : hasInfo ? info.level : "Saved game";
+            snprintf(row, sizeof(row), "%c %d. %.27s", i == selected ? '>' : ' ', i + 1, name);
+            US_Printxy(28, 34 + i * 18, row);
+            if (hasInfo)
+                US_Printxy(60, 42 + i * 18, info.date);
+        }
+        US_Printxy(28, 147, footer);
+        VW_UpdateScreen();
+        if (screenfaded)
+            VW_FadeIn();
+
+        const id0_char_t key = GetKeyChoice(choiceKeys, true);
+        if (key == sc_Escape || key == sc_N)
+            return -1;
+        if (key == sc_UpArrow || key == sc_LeftArrow)
+            selected = (selected + CAT3DS_ABYSS_SLOTS - 1) % CAT3DS_ABYSS_SLOTS;
+        else if (key == sc_DownArrow || key == sc_RightArrow)
+            selected = (selected + 1) % CAT3DS_ABYSS_SLOTS;
+        else if (key == sc_Return || key == sc_Space)
+        {
+            char filename[16];
+            Cat3DS_AbyssSlotFilename(selected, "SAV", filename, sizeof(filename));
+            if (saving || VerifyRewritable(filename))
+                return selected;
+            US_DrawWindow(7, 9, 26, 4);
+            US_CPrintLine("This slot is empty", NULL);
+            VW_UpdateScreen();
+            /* Continue on the next button press; do not open text input. */
+            IN_Ack();
+            IN_ClearKeysDown();
+        }
+    }
+}
+
+static void Cat3DS_AbyssSlotError(const char *message)
+{
+    US_DrawWindow(6, 8, 28, 5);
+    US_CPrintLine(message, NULL);
+    US_CPrintLine("Press any button", NULL);
+    VW_UpdateScreen();
+    IN_Ack();
+    IN_ClearKeysDown();
+}
+
+static void Cat3DS_AbyssSaveSlotGame(void)
+{
+    const int slot = Cat3DS_AbyssChooseSlot(true);
+    if (slot >= 0)
+    {
+        char filename[16];
+        Cat3DS_AbyssSlotFilename(slot, "SAV", filename, sizeof(filename));
+        BE_FILE_T file = BE_Cross_open_rewritable_for_overwriting(filename);
+        if (!BE_Cross_IsFileValid(file))
+            Cat3DS_AbyssSlotError("Unable to open save slot");
+        else
+        {
+            const id0_boolean_t headerOK =
+                BE_Cross_writeInt8LEBuffer(file, refkeen_compat_gelib_gamename,
+                    refkeen_compat_gelib_gamename_strbufflen) == refkeen_compat_gelib_gamename_strbufflen &&
+                BE_Cross_writeInt8LEBuffer(file, SAVEVER_DATA,
+                    sizeof(SAVEVER_DATA)) == sizeof(SAVEVER_DATA);
+            const id0_boolean_t saved = headerOK && USL_SaveGame && USL_SaveGame(file);
+            BE_Cross_close(file);
+            if (saved)
+                Cat3DS_AbyssWriteSlotInfo(slot);
+            else
+                Cat3DS_AbyssSlotError("Could not save this game");
+        }
+    }
+    IN_ClearKeysDown();
+    if (!screenfaded)
+        VW_FadeOut();
+}
+
+static id0_boolean_t Cat3DS_AbyssLoadSlotGame(void)
+{
+    id0_boolean_t loaded = false;
+    const int slot = Cat3DS_AbyssChooseSlot(false);
+    if (slot >= 0)
+    {
+        char filename[16];
+        Cat3DS_AbyssSlotFilename(slot, "SAV", filename, sizeof(filename));
+        BE_FILE_T file = BE_Cross_open_rewritable_for_reading(filename);
+        if (!BE_Cross_IsFileValid(file))
+            Cat3DS_AbyssSlotError("Cannot open save slot");
+        else
+        {
+            char header[19] = {};
+            char version[sizeof(SAVEVER_DATA)] = {};
+            const id0_boolean_t valid =
+                refkeen_compat_gelib_gamename_strbufflen <= sizeof(header) &&
+                BE_Cross_readInt8LEBuffer(file, header,
+                    refkeen_compat_gelib_gamename_strbufflen) == refkeen_compat_gelib_gamename_strbufflen &&
+                BE_Cross_readInt8LEBuffer(file, version, sizeof(version)) == sizeof(version) &&
+                !memcmp(header, refkeen_compat_gelib_gamename,
+                    refkeen_compat_gelib_gamename_strbufflen) &&
+                !memcmp(version, SAVEVER_DATA, sizeof(version));
+            if (valid && USL_LoadGame)
+                loaded = USL_LoadGame(file);
+            BE_Cross_close(file);
+            if (!loaded)
+                Cat3DS_AbyssSlotError("Cannot load this saved game");
+        }
+    }
+    IN_ClearKeysDown();
+    if (!screenfaded)
+        VW_FadeOut();
+    return loaded;
+}
+#endif // __3DS__ && REFKEEN_VER_CATABYSS
+
 ///////////////////////////////////////////////////////////////////////////
 //
 //	GE_SaveGame
@@ -538,6 +739,10 @@ id0_long_t VerifyRewritable(const id0_char_t *filename)
 
 void GE_SaveGame()
 {
+#if defined(__3DS__) && defined(REFKEEN_VER_CATABYSS)
+	Cat3DS_AbyssSaveSlotGame();
+	return;
+#endif
 	id0_boolean_t GettingFilename=true;
 	//id0_char_t drive; // REFKEEN - Removed
 //	id0_char_t Filename[FILENAME_LEN+1],drive; //, ID[sizeof(GAMENAME)], VER[sizeof(SAVEVER_DATA)];
@@ -704,6 +909,9 @@ EXIT_FUNC:;
 
 id0_boolean_t GE_LoadGame()
 {
+#if defined(__3DS__) && defined(REFKEEN_VER_CATABYSS)
+	return Cat3DS_AbyssLoadSlotGame();
+#endif
 	id0_boolean_t GettingFilename=true,rt_code=false;
 	BE_FILE_T handle;
 

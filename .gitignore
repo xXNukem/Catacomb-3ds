@@ -1,0 +1,51 @@
+# macOS
+.DS_Store
+
+# Build outputs
+/platform/3ds/build*/
+/platform/3ds/.sdl3-build/
+/platform/3ds/.sdl3-source/
+/platform/3ds/.sdl3-*/
+*.3dsx
+*.elf
+*.smdh
+*.o
+*.d
+*.lst
+*.map
+
+# Downloaded dependencies
+/platform/3ds/.SDL3-*.tar.gz
+
+# Backups
+/.cat3ds-backup*/
+/platform/3ds/.backup-*/
+*.bak
+*.bak-*
+*.backup-*
+*.orig
+*.rej
+
+# Temporary diagnostics
+/abyss-v5-diagnostic/
+
+# Archives
+*.zip
+
+# Development notes and temporary instructions
+/README-*.txt
+/README-*.md
+/README_*.txt
+/README.txt
+
+# Generated configuration
+/platform/3ds/include/refkeen_config.h
+
+# Local backups and installed SDL3 dependencies
+/platform/3ds/.backups/
+/platform/3ds/.original-sdl3-prefix/
+
+# Historical development patches
+/platform/3ds/patches/
+/platform/3ds/tools/install_*.py
+/platform/3ds/tools/revert_*.py

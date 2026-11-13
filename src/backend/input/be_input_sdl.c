@@ -94,9 +94,11 @@ void BEL_ST_FillJoysticksList(void)
 				BE_Cross_LogMessage(BE_LOG_MSG_NORMAL, "BEL_ST_FillJoysticksList: Opened gamepad %u\n", joysticks[dev_index]);
 				++i;
 
+				#ifndef __3DS__
 				g_sdlShowControllerUI = true;
 				g_sdlForceGfxControlUiRefresh = true;
 				BEL_ST_ConditionallyShowAltInputPointer();
+				#endif
 				BEL_ST_CheckForHidingTouchUI();
 			}
 		}
@@ -126,9 +128,11 @@ void BEL_ST_ConditionallyAddJoystick(SDL_JoystickID dev_id)
 				g_sdlJoysticksInstanceIds[i] = SDL_GetJoystickID(SDL_GetGamepadJoystick(g_sdlControllers[i]));
 				BE_Cross_LogMessage(BE_LOG_MSG_NORMAL, "BEL_ST_ConditionallyAddJoystick: Opened gamepad %u\n", dev_id);
 
+				#ifndef __3DS__
 				g_sdlShowControllerUI = true;
 				g_sdlForceGfxControlUiRefresh = true;
 				BEL_ST_ConditionallyShowAltInputPointer();
+				#endif
 				BEL_ST_CheckForHidingTouchUI();
 				break;
 			}

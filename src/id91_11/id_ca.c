@@ -263,22 +263,26 @@ void CAL_GetGrChunkLength (id0_int_t chunk)
 
 id0_boolean_t CA_FarRead (BE_FILE_T handle, id0_byte_t id0_far *dest, id0_long_t length)
 {
-	if (length>0xffffl)
-		Quit ("CA_FarRead doesn't support 64K reads yet!");
-	// Ported from ASM
-	int bytesread = BE_Cross_readInt8LEBuffer(handle, dest, length);
-	if (bytesread == 0)
+	/* Catacomb 3DS: The old 64-KiB limit comes from segmented DOS memory.
+	 * On ARM, dest is a normal contiguous buffer. Read in bounded chunks so
+	 * large graphics/audio resources work without truncated or unchecked IO. */
+	if (length < 0)
 	{
-		// Keep errno as set by read
+		errno = EINVAL;
 		return false;
 	}
-
-	if (bytesread != length)
+	while (length > 0)
 	{
-		/* FIXME (REFKEEN) - Is that the right way? */
-		errno = 11;
-		//errno = EINVFMT; // user manager knows this is bad read
-		return false;
+		size_t requested = (length > 32768) ? 32768 : (size_t)length;
+		size_t bytesread = BE_Cross_readInt8LEBuffer(handle, dest, requested);
+		if (bytesread != requested)
+		{
+			if (!ferror(handle))
+				errno = EIO;
+			return false;
+		}
+		dest += bytesread;
+		length -= (id0_long_t)bytesread;
 	}
 	return true;
 }
@@ -593,7 +597,12 @@ id0_long_t CA_RLEWCompress (id0_unsigned_t id0_huge *source, id0_long_t length, 
   {
 	count = 1;
 	value = *source++;
+#ifdef __3DS__
+	/* Do not dereference one past the end of the source map plane. */
+	while (source < end && *source == value)
+#else
 	while (*source == value && source<end)
+#endif
 	{
 	  count++;
 	  source++;
@@ -1499,6 +1508,70 @@ void CAL_ExpandGrChunk (id0_int_t chunk, id0_byte_t id0_far *source)
 }
 
 
+#ifdef __3DS__
+/* Only used by this port. The native staging allocation never participates
+ * in MM_SortMem, so decompressing cannot invalidate the compressed input.
+ * The game still uses ReflectionHLE's original CAL_ExpandGrChunk function. */
+int g_cat3ds_active_graphic_chunk = -1;
+
+static void CAL_ReadGrChunkStable3DS(id0_int_t chunk)
+{
+    id0_int_t next = chunk + 1;
+    id0_long_t start, end, length;
+    id0_byte_t *source;
+
+    if (chunk < 0 || chunk >= NUMCHUNKS)
+        Quit("3DS graphic chunk index out of range");
+    start = GRFILEPOS(chunk);
+    if (start < 0)
+        return; /* Sparse chunk */
+    while ((next <= NUMCHUNKS) && (GRFILEPOS(next) == -1))
+        ++next;
+    if (next > NUMCHUNKS)
+        Quit("3DS graphic chunk has no terminating offset");
+    end = GRFILEPOS(next);
+    length = end - start;
+    /* The largest compressed Catacomb 3-D 1.22 chunk is under 19 KiB.
+     * Keep a generous upper bound to reject malformed resource offsets. */
+    if (length < 4 || length > 131072 || start < 0)
+        Quit("3DS graphic chunk has invalid compressed length");
+
+    source = (id0_byte_t *)malloc((size_t)length);
+    if (!source)
+        Quit("3DS native graphics staging allocation failed");
+    if ((BE_Cross_seek(grhandle, start, SEEK_SET) != 0) ||
+        !CA_FarRead(grhandle, source, length))
+    {
+        free(source);
+        Quit("3DS graphic chunk read failed");
+    }
+    /* EGA tiles don't have an explicit length header. Other chunks do. */
+    if (chunk < STARTTILE8 || chunk >= STARTEXTERNS)
+    {
+        uint32_t expanded = (uint32_t)source[0] |
+            ((uint32_t)source[1] << 8) |
+            ((uint32_t)source[2] << 16) |
+            ((uint32_t)source[3] << 24);
+        if (expanded == 0 || expanded > 65536)
+        {
+            FILE *report = fopen("sdmc:/3ds/catacomb-3ds/memory-report.txt", "a");
+            if (report)
+            {
+                fprintf(report, "INVALID EGA RESOURCE: chunk=%d offset=%ld compressed=%ld expanded=%lu\n",
+                    (int)chunk, (long)start, (long)length, (unsigned long)expanded);
+                fclose(report);
+            }
+            free(source);
+            Quit("3DS graphics chunk has invalid expanded length");
+        }
+    }
+    g_cat3ds_active_graphic_chunk = chunk;
+    CAL_ExpandGrChunk(chunk, source);
+    g_cat3ds_active_graphic_chunk = -1;
+    free(source);
+}
+#endif /* __3DS__ */
+
 /*
 ======================
 =
@@ -1511,6 +1584,10 @@ void CAL_ExpandGrChunk (id0_int_t chunk, id0_byte_t id0_far *source)
 
 void CAL_ReadGrChunk (id0_int_t chunk)
 {
+#ifdef __3DS__
+    CAL_ReadGrChunkStable3DS(chunk);
+    return;
+#endif
 	id0_long_t	pos,compressed;
 	memptr	bigbufferseg;
 	id0_byte_t	id0_far *source;
@@ -1577,6 +1654,11 @@ void CA_CacheGrChunk (id0_int_t chunk)
 		MM_SetPurge (&grsegs[chunk],0);
 		return;							// allready in memory
 	}
+
+#ifdef __3DS__
+    CAL_ReadGrChunkStable3DS(chunk);
+    return;
+#endif
 
 #ifdef REFKEEN_VER_CATADVENTURES
 
@@ -2163,6 +2245,12 @@ void CA_CacheMarks (const id0_char_t *title)
 	for (i=0;i<NUMCHUNKS;i++)
 		if ( (grneeded[i]&ca_levelbit) && !grsegs[i])
 		{
+#ifdef __3DS__
+            if (dialog && updatecachebox) updatecachebox();
+            CAL_ReadGrChunkStable3DS(i);
+            if (mmerror) return;
+            continue;
+#endif
 //
 // update thermometer
 //
