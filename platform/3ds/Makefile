@@ -35,7 +35,7 @@ TARGET		:=	$(notdir $(CURDIR))
 BUILD		:=	build
 SOURCES		:=	source
 DATA		:=	data
-INCLUDES := include ../../src
+INCLUDES := ../../src
 GRAPHICS	:=	gfx
 GFXBUILD	:=	$(BUILD)
 #ROMFS		:=	romfs
@@ -91,6 +91,8 @@ CFILES += be_video_fonts.c
 CFILES += be_video_emu.c
 CFILES += be_cross.c be_filesystem_file.c unlzexe.c
 CPPFILES	:=	$(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.cpp)))
+# The edition adapter uses the game descriptors linked by the original engines.
+CPPFILES	:=	$(filter-out cat3ds_abyss_compat.cpp,$(CPPFILES))
 SFILES		:=	$(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.s)))
 PICAFILES	:=	$(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.v.pica)))
 SHLISTFILES	:=	$(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.shlist)))
@@ -203,7 +205,10 @@ else
 #---------------------------------------------------------------------------------
 $(OUTPUT).3dsx	:	$(OUTPUT).elf $(_3DSXDEPS)
 
-$(OFILES_SOURCES) : $(HFILES)
+$(OFILES_SOURCES) : $(HFILES) refkeen_config.h
+
+refkeen_config.h: $(TOPDIR)/refkeen_config.h.in
+	cp $< $@
 
 $(OUTPUT).elf	:	$(OFILES)
 

@@ -1512,6 +1512,25 @@ void CAL_ExpandGrChunk (id0_int_t chunk, id0_byte_t id0_far *source)
 /* Only used by this port. The native staging allocation never participates
  * in MM_SortMem, so decompressing cannot invalidate the compressed input.
  * The game still uses ReflectionHLE's original CAL_ExpandGrChunk function. */
+#if defined(REFKEEN_VER_CAT3D) || defined(REFKEEN_VER_CATABYSS)
+// Read only the DOS map header. CA_CacheMap would discard the active planes.
+bool Cat3DS_MapDimensions(int level, unsigned &width, unsigned &height)
+{
+    if (!tinf || level < 0 || (size_t)level >= BE_Cross_ArrayLen(mapheaderseg))
+        return false;
+    const long offset = ((mapfiletype *)tinf)->headeroffsets[level];
+    maptype header;
+    if (offset < 8 || !maphandle) return false;
+    const long saved = ftell(maphandle);
+    if (saved < 0) return false;
+    const bool ok = fseek(maphandle, offset, SEEK_SET) == 0 &&
+                    fread(&header, sizeof(header), 1, maphandle) == 1;
+    if (fseek(maphandle, saved, SEEK_SET) || !ok) return false;
+    width = header.width;
+    height = header.height;
+    return true;
+}
+#endif
 int g_cat3ds_active_graphic_chunk = -1;
 
 static void CAL_ReadGrChunkStable3DS(id0_int_t chunk)

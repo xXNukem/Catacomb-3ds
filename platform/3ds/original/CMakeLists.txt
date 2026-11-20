@@ -9,6 +9,7 @@ set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(ROOT "${CMAKE_CURRENT_LIST_DIR}/../../..")
 get_filename_component(ROOT "${ROOT}" ABSOLUTE)
+configure_file("../refkeen_config.h.in" "generated/refkeen_config.h" COPYONLY)
 
 # These are ReflectionHLE's actual original source lists; do not reproduce,
 # rewrite, or fork the renderer, actors, game loop or physics.
@@ -38,7 +39,6 @@ set(ENGINE_SOURCES
 # for Cat3D and Abyss, while the backend is compiled just once.
 set(CAT3DS_INCLUDED_DIRS
   "${CMAKE_CURRENT_LIST_DIR}"
-  "${ROOT}/platform/3ds/include"
   "${ROOT}/platform/3ds/source"
   "${CMAKE_CURRENT_BINARY_DIR}/generated"
   "${ROOT}/src" "${ROOT}/src/crc32" "${ROOT}/src/depklite"

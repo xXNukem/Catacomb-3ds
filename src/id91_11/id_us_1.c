@@ -591,7 +591,9 @@ US_Setup(void)
 	USL_SaveGame = 0;
 	USL_LoadGame = 0;
 #endif
+#if !defined(__3DS__) || !defined(REFKEEN_VER_CAT3D)
 	USL_CheckSavedGames();  // Check which saved games are present
+#endif
 }
 
 ///////////////////////////////////////////////////////////////////////////

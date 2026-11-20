@@ -50,7 +50,7 @@ extern "C" int cat3dsSelectGame(void);
 extern "C" int cat3dsPrepareAbyssCompatibility(void);
 #include <3ds.h>
 #include <unistd.h>
-#include <sys/stat.h>
+#include "backend/filesystem/be_filesystem_mkdir.h"
 #endif
 
 #if (!defined REFKEEN_ENABLE_LAUNCHER) && (!defined REFKEEN_CONFIG_ENABLE_CMDLINE)
@@ -242,10 +242,8 @@ int main(int argc, char **argv)
     /* Request 804 MHz / L2 on New 3DS before showing the launcher.
      * This does not create threads or change the game logic. */
     osSetSpeedupEnable(true);
-    mkdir("sdmc:/3ds", 0777);
-    mkdir("sdmc:/3ds/catacomb-3ds", 0777);
-    mkdir("sdmc:/3ds/catacomb-3ds/saves", 0777);
-    mkdir("sdmc:/3ds/catacomb-3ds/config", 0777);
+    BEL_Cross_mkdir("sdmc:/3ds");
+    BEL_Cross_mkdir("sdmc:/3ds/catacomb-3ds");
     /* Keep the original Catacomb 3DS EGA game-selection menu. The menu is
      * displayed before starting the ReflectionHLE engine, and is shut down
      * before BE_ST_InitCommon initializes SDL for the game itself. */
@@ -276,7 +274,6 @@ int main(int argc, char **argv)
     {
         if (chdir("sdmc:/3ds/catacomb-3ds/games/catabyss") != 0)
             return 1;
-        mkdir("sdmc:/3ds/catacomb-3ds/saves-abyss", 0777);
         const int edition = cat3dsPrepareAbyssCompatibility();
         if (!edition)
         {

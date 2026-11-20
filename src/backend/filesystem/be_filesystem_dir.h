@@ -6,7 +6,7 @@
 #ifdef REFKEEN_PLATFORM_WINDOWS
 #include <shlwapi.h>
 #endif
-#ifdef REFKEEN_PLATFORM_UNIX
+#if defined(REFKEEN_PLATFORM_UNIX) || defined(__3DS__)
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -31,10 +31,11 @@ static inline bool BEL_Cross_IsDir(const TCHAR *path)
 {
 #ifdef REFKEEN_PLATFORM_WINDOWS
 	return PathIsDirectory(path);
-#endif
-#ifdef REFKEEN_PLATFORM_UNIX
+#elif defined(REFKEEN_PLATFORM_UNIX) || defined(__3DS__)
 	struct stat info;
 	return ((stat(path, &info) == 0) && S_ISDIR(info.st_mode));
+#else
+	return false;
 #endif
 }
 

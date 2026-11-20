@@ -10,6 +10,9 @@
 #endif
 
 // WARNING: Do *not* assume this is recursive!!
+#ifdef __3DS__
+void BEL_Cross_mkdir(const TCHAR *path);
+#else
 static inline void BEL_Cross_mkdir(const TCHAR *path)
 {
 #ifdef REFKEEN_PLATFORM_WINDOWS
@@ -18,5 +21,6 @@ static inline void BEL_Cross_mkdir(const TCHAR *path)
 	_tmkdir(path, 0755);
 #endif
 }
+#endif
 
 #endif

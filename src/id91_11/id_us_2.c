@@ -34,6 +34,12 @@
 
 //#pragma warn    -pia
 
+#if defined(__3DS__) && defined(REFKEEN_VER_CAT3D)
+#include <3ds.h>
+#include "backend/filesystem/be_filesystem_gameinst.h"
+#include "cat3ds_slot_files.h"
+#endif
+
 REFKEEN_NS_B
 
 #if defined(__3DS__) && defined(REFKEEN_VER_CAT3D)
@@ -1809,9 +1815,32 @@ USL_SetupCard(void)
 	USL_DrawCtlPanel();     // Contents?
 }
 
+#if defined(__3DS__) && defined(REFKEEN_VER_CAT3D)
+#include "cat3ds_slot_menu.inc"
+#endif
+
 static void
 USL_DownLevel(UserItemGroup id0_far *group)
 {
+#if defined(__3DS__) && defined(REFKEEN_VER_CAT3D)
+	if (group == &savegamegroup || group == &loadgamegroup)
+	{
+		const bool saving = group == &savegamegroup;
+		if (Cat3DS_RunSlots(saving))
+		{
+			if (saving)
+				GameIsDirty = false;
+			else
+			{
+				loadedgame = Paused = true;
+				Communication = uc_Loaded;
+				CtlPanelDone = true;
+			}
+		}
+		USL_SetupCard();
+		return;
+	}
+#endif
 	if (!group)
 		Quit("USL_DownLevel() - nil card");
 	USL_PushCard(group);

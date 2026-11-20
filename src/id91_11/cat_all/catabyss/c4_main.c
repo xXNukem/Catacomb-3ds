@@ -40,6 +40,10 @@
 //#pragma hdrstop
 //#include <dir.h>
 
+#ifdef __3DS__
+#include "cat3ds_saved_plane.h"
+#endif
+
 REFKEEN_NS_B
 
 // REFKEEN - Use replacement for the CATALOG macro
@@ -192,19 +196,20 @@ static id0_boolean_t SaveObject(BE_FILE_T file, objtype *o)
 static id0_boolean_t LoadObject(BE_FILE_T file, objtype *o)
 {
 	id0_int_t dummy;
+	id0_word_t active, kind, direction;
 	// BACKWARDS COMPATIBILITY
 	id0_word_t statedosoffset;
 	// Just tells if "o->next" is zero or not
 	id0_int_t isnext;
 	// Now reading
-	if ((BE_Cross_read_activetype_FromU16LE(file, &o->active) != 2)
+	if ((BE_Cross_readInt16LE(file, &active) != 2)
 	    || (BE_Cross_readInt16LE(file, &o->ticcount) != 2)
-	    || (BE_Cross_read_classtype_FromU16LE(file, &o->obclass) != 2)
+	    || (BE_Cross_readInt16LE(file, &kind) != 2)
 	    || (BE_Cross_readInt16LE(file, &statedosoffset) != 2) // BACKWARDS COMPATIBILITY
 	    || (BE_Cross_readInt8LE(file, &o->flags) != 1)
 	    || (BE_Cross_readInt8LE(file, &dummy) != 1) // Padding due to word alignment in original code
 	    || (BE_Cross_readInt32LE(file, &o->distance) != 4)
-	    || (BE_Cross_read_dirtype_FromU16LE(file, &o->dir) != 2)
+	    || (BE_Cross_readInt16LE(file, &direction) != 2)
 	    || (BE_Cross_readInt32LE(file, &o->x) != 4)
 	    || (BE_Cross_readInt32LE(file, &o->y) != 4)
 	    || (BE_Cross_readInt16LE(file, &o->tilex) != 2)
@@ -230,6 +235,14 @@ static id0_boolean_t LoadObject(BE_FILE_T file, objtype *o)
 	)
 		return false;
 
+#ifdef __3DS__
+	// Validate DOS words before converting them to native C++ enums.
+	if (active > always || kind > solidobj || direction > nodir)
+		return false;
+#endif
+	o->active = (activetype)active;
+	o->obclass = (classtype)kind;
+	o->dir = (dirtype)direction;
 	o->state = RefKeen_GetObjStatePtrFromDOSPointer(statedosoffset);
 	// HACK: All we need to know is if next was originally NULL or not
 	o->next = isnext ? o : NULL;
@@ -301,38 +314,7 @@ void NewGame (void)
 //===========================================================================
 
 #define RLETAG	0xABCD
-#ifdef __3DS__
-/* Validate a compressed save stream before the historical decompressor,
- * which assumes that its source and destination are already well formed. */
-static id0_boolean_t Cat3DS_AbyssValidSavedMap(const id0_unsigned_t *src,
-                                               size_t compressedBytes,
-                                               size_t expandedBytes)
-{
-    size_t pos = 0, out = 0;
-    const size_t count = compressedBytes / 2;
-    const size_t expected = expandedBytes / 2;
-    if (!src || (compressedBytes & 1) || (expandedBytes & 1))
-        return false;
-    while (pos < count)
-    {
-        const id0_unsigned_t value = src[pos++];
-        size_t run = 1;
-        if (value == RLETAG)
-        {
-            if (pos + 2 > count)
-                return false;
-            run = src[pos++];
-            ++pos; /* repeated value */
-            if (!run)
-                return false;
-        }
-        if (run > expected - out)
-            return false;
-        out += run;
-    }
-    return out == expected;
-}
-#endif
+
 
 
 /*
@@ -440,18 +422,21 @@ id0_boolean_t	SaveTheGame(BE_FILE_T file)
 ==================
 */
 
+#ifdef __3DS__
+#include "cat3ds_load_game.inc"
+id0_boolean_t LoadTheGame(BE_FILE_T file)
+{
+    int level;
+    return Cat3DS_ReadSavedGame(file, true, level);
+}
+#else
 id0_boolean_t	LoadTheGame(BE_FILE_T file)
 {
 	id0_unsigned_t	i,x,y;
 	objtype		/**obj,*/*prev,*next,*followed;
 	id0_unsigned_t	compressed,expanded;
 	id0_unsigned_t	id0_far *map,tile;
-#ifdef __3DS__
-    id0_byte_t *bigbuffer;
-    size_t bufferCapacity;
-#else
     memptr bigbuffer;
-#endif
 
 	screenpage = 0;
 	FreeUpMemory();
@@ -481,64 +466,29 @@ id0_boolean_t	LoadTheGame(BE_FILE_T file)
 #endif
 
 	expanded = mapwidth * mapheight * 2;
-#ifdef __3DS__
-    bufferCapacity = (size_t)expanded * 3 + 2;
-    bigbuffer = expanded ? (id0_byte_t *)malloc(bufferCapacity) : NULL;
-    if (!bigbuffer)
-        return false;
-#else
     MM_GetPtr (&bigbuffer,expanded);
-#endif
 
 	for (i = 0;i < 3;i+=2)	// Read planes 0 and 2
 	{
 		if (BE_Cross_readInt16LE(file, &compressed) != 2)
 		//if (!CA_FarRead(file,(id0_byte_t id0_far *)&compressed,sizeof(compressed)) )
 		{
-		#ifdef __3DS__
-            free(bigbuffer);
-#else
             MM_FreePtr (&bigbuffer);
-#endif
 			return(false);
 		}
 
-#ifdef __3DS__
-        if (!compressed || (compressed & 1) ||
-            (size_t)compressed > bufferCapacity)
-        {
-            free(bigbuffer);
-            return false;
-        }
-#endif
         if (BE_Cross_readInt16LEBuffer(file, bigbuffer, compressed) != compressed)
 		//if (!CA_FarRead(file,(id0_byte_t id0_far *)bigbuffer,compressed) )
 		{
-		#ifdef __3DS__
-            free(bigbuffer);
-#else
             MM_FreePtr (&bigbuffer);
-#endif
 			return(false);
 		}
 
-#ifdef __3DS__
-        if (!Cat3DS_AbyssValidSavedMap((const id0_unsigned_t *)bigbuffer,
-                                       compressed, expanded))
-        {
-            free(bigbuffer);
-            return false;
-        }
-#endif
         CA_RLEWexpand ((id0_unsigned_t id0_huge *)bigbuffer,
 			(id0_unsigned_t id0_huge *)mapsegs[i],expanded,RLETAG);
 	}
 
-#ifdef __3DS__
-    free(bigbuffer);
-#else
     MM_FreePtr (&bigbuffer);
-#endif
 //
 // copy the wall data to a data segment array again, to handle doors and
 // bomb walls that are allready opened
@@ -586,6 +536,7 @@ id0_boolean_t	LoadTheGame(BE_FILE_T file)
 
 	return(true);
 }
+#endif
 
 //===========================================================================
 

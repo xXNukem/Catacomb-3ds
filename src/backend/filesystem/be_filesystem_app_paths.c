@@ -33,6 +33,10 @@
 
 #include <stdlib.h>
 
+#ifdef __3DS__
+#include "be_filesystem_mkdir.h"
+#endif
+
 #ifdef REFKEEN_PLATFORM_ANDROID
 #include "be_filesystem_mkdir.h"
 #include <jni.h>
@@ -179,6 +183,12 @@ void BE_Cross_PrepareAppPaths(void)
 		BEL_Cross_AddRootPathIfDir(path, "appgameinsts", "App-local game installations dir");
 		// HACK - We don't look at arguments set by the user (for modifying e.g., g_be_appDataPath), but then these are never sent on Android...
 	}
+#elif defined(__3DS__)
+	// The native selector supplies both absolute SD paths before SDL reads config.
+	BE_Cross_safeandfastcstringcopy(g_be_appDataPath, g_be_appDataPath + BE_Cross_ArrayLen(g_be_appDataPath), be_main_arg_datadir);
+	BE_Cross_safeandfastcstringcopy(g_be_appNewCfgPath, g_be_appNewCfgPath + BE_Cross_ArrayLen(g_be_appNewCfgPath), be_main_arg_newcfgdir);
+	BEL_Cross_mkdir(g_be_appDataPath);
+	BEL_Cross_mkdir(g_be_appNewCfgPath);
 #elif (defined REFKEEN_PLATFORM_UNIX)
 	const char *homeVar = getenv("HOME");
 

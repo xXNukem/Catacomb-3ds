@@ -1,0 +1,9 @@
+/* ReflectionHLE configuration shared by the devkitARM Nintendo 3DS targets.
+ * Engine selection, unified build, threads and command line are target flags. */
+#ifndef REFKEEN_CONFIG_H
+#define REFKEEN_CONFIG_H
+
+#define REFKEEN_ARCH_LITTLE_ENDIAN 1
+#define REFKEEN_RESAMPLER_NONE 1
+
+#endif
