@@ -22,6 +22,7 @@
 #include "c3_def.h"
 #ifdef __3DS__
 #include "cat3ds_dualscreen.h"
+#include "cat3ds_menu.h"
 #endif
 //#pragma hdrstop
 
@@ -136,10 +137,23 @@ void	CenterWindow(id0_word_t w,id0_word_t h)
 =====================
 */
 
+#ifdef __3DS__
+#include "cat3ds_game_menu.inc"
+#endif
+
 void CheckKeys (void)
 {
 	if (screenfaded)			// don't do anything with a faded screen
 		return;
+#ifdef __3DS__
+    int returnRow = -1;
+nativeMenu:
+    if (Cat3DS_HandleMenu(false, returnRow)) {
+        if (returnRow >= 0 && !playstate) goto nativeMenu;
+        return;
+    }
+#endif
+
 
 //
 // pause key wierdness can't be checked as a scan code
@@ -200,6 +214,9 @@ void CheckKeys (void)
 	}
 
 //
+#ifdef __3DS__
+    if (returnRow >= 0 && !playstate) goto nativeMenu;
+#endif
 // F10-? debug keys
 //
 	if (Keyboard[sc_F10])

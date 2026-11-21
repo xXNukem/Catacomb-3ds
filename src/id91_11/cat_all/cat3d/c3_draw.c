@@ -22,6 +22,7 @@
 #include "c3_def.h"
 #ifdef __3DS__
 #include "cat3ds_dualscreen.h"
+#include "cat3ds_stereo.h"
 #include <SDL3/SDL_timer.h>
 #endif
 //#pragma hdrstop
@@ -109,13 +110,15 @@ fixed scale;
  * It is shared by ray angles, walls and actor projection. No completed EGA
  * image is shifted; the original integer 2D path remains unchanged. */
 static double cat3dsStereoProjectionShift;
+static uint64_t renderStart;
 /* Both 2D and 3D gameplay use this projection so activating the physical
  * slider never changes the world FOV. BStone 400x240 FOV = 74.61 deg. */
 #define CAT3DS_STEREO_FOV_SCALE 378
-#define CAT3DS_STEREO_ZERO_PARALLAX 2.00
+
 /* Sprite masking must use the per-eye wall depth from the V7 column
  * raycaster. Keep this off for the untouched original 2D renderer. */
 int cat3dsStereoOcclusionEnabled;
+fixed cat3dsWallDepth[VIEWWIDTH], cat3dsSpriteDepth;
 
 #endif
 
@@ -1062,7 +1065,8 @@ void TransformActor (objtype *ob)
 //
   gxt = FixedByFrac(gx,viewcos);
   gyt = FixedByFrac(gy,viewsin);
-  nx = gxt-gyt-ob->size;
+  const fixed centerDepth = gxt-gyt;
+  nx = centerDepth-ob->size;
 
 //
 // calculate newy
@@ -1085,8 +1089,11 @@ void TransformActor (objtype *ob)
 #ifdef __3DS__
   if (scale == CAT3DS_STEREO_FOV_SCALE)
   /* Actors must share the exact fractional optical centre of the walls. */
-    ob->viewx = (id0_int_t)((double)CENTERX + 0.5 +
-                    (double)ny / ratio + cat3dsStereoProjectionShift);
+  {
+    const double denominator = fmax(MINRATIO, (double)centerDepth * scale / FOCALLENGTH);
+    const double x = CENTERX + 0.5 + ny / denominator + cat3dsStereoProjectionShift;
+    ob->viewx = (id0_int_t)fmax(-2 * VIEWWIDTH, fmin(2 * VIEWWIDTH, x));
+  }
   else
 #endif
     ob->viewx = CENTERX + ny/ratio;
@@ -1421,6 +1428,12 @@ asm	rep	stosw
 
 objtype *depthsort[MAXACTORS];
 
+#ifdef __3DS__
+enum Cat3DSViewPass { monoView, centerVisibility, eyeView };
+static Cat3DSViewPass viewPass;
+static objtype projectedActors[MAXACTORS];
+static id0_byte_t centerSpotvis[sizeof spotvis];
+#endif
 void DrawScaleds (void)
 {
 	id0_int_t 		i,j,least,numvisable,height;
@@ -1445,7 +1458,11 @@ void DrawScaleds (void)
 		// as a right-shift of obj->y with signed value of -95792 by 16 bits.
 		//
 		// Workaround itself: Add a few conditions.
-		tilespot = &tilemap[0][0]+(obj->tilex<<6)+obj->tiley;
+#ifdef __3DS__
+        if (Cat3DS_ActorVisible(tilemap[0], spotvis[0], MAPSIZE, mapwidth, mapheight,
+                                obj->tilex, obj->tiley))
+#else
+        tilespot = &tilemap[0][0]+(obj->tilex<<6)+obj->tiley;
 		visspot = &spotvis[0][0]+(obj->tilex<<6)+obj->tiley;
 		//
 		// could be in any of the nine surrounding tiles
@@ -1460,13 +1477,27 @@ void DrawScaleds (void)
 		|| ( *(visspot+65) && !*(tilespot+65) )
 		|| ( *(visspot+64) && !*(tilespot+64) )
 		|| ( *(visspot+63) && !*(tilespot+63) ) ))
+#endif
 		{
-			obj->active = yes/*true*/;
-			TransformActor (obj);
-			if (!obj->viewheight || obj->viewheight > VIEWWIDTH)
+			objtype *projected = obj;
+#ifdef __3DS__
+            if (viewPass == eyeView) {
+                projected = &projectedActors[numvisable];
+                *projected = *obj;
+            }
+#endif
+            projected->active = yes;
+            TransformActor(projected);
+			if (!projected->viewheight || projected->viewheight > VIEWWIDTH)
 				continue;			// too close or far away
 
-			*vislist++ = obj;
+#ifdef __3DS__
+            if (viewPass == centerVisibility) {
+                projected->viewheight = 32000; /* final DOS sort marker */
+                continue;
+            }
+#endif
+            *vislist++ = projected;
 			numvisable++;
 		}
 	}
@@ -1493,7 +1524,12 @@ void DrawScaleds (void)
 		// draw farthest
 		//
 		shape = shapedirectory[farthest->state->shapenum-FIRSTSCALEPIC];
-		ScaleShape(farthest->viewx,(t_compshape *)shape,farthest->viewheight);
+#ifdef __3DS__
+        if (cat3dsStereoOcclusionEnabled)
+            cat3dsSpriteDepth = FixedByFrac(farthest->x - viewx, viewcos) -
+                                FixedByFrac(farthest->y - viewy, viewsin);
+#endif
+        ScaleShape(farthest->viewx,(t_compshape *)shape,farthest->viewheight);
 		farthest->viewheight = 32000;
 	}
 }
@@ -1586,7 +1622,11 @@ void	DrawHand (void)
 
 	picnum = HAND1PICM;
 	if (gamestate.shotpower || boltsleft)
-		picnum += (((id0_unsigned_t)SD_GetTimeCount()>>3)&1);
+#ifdef __3DS__
+        picnum += animframe;
+#else
+        picnum += (((id0_unsigned_t)SD_GetTimeCount()>>3)&1);
+#endif
 
 	source = grsegs[picnum];
 	dest = ylookup[VIEWHEIGHT-handheight]+12+bufferofs;
@@ -1609,72 +1649,11 @@ void	DrawHand (void)
 */
 
 #ifdef __3DS__
-/* Ray columns and actor projection must use the same off-axis camera
- * centre. This routine also supports the monoscopic, wide-FOV 3DS view. */
-static void Cat3DS_SetEyeProjection(double shift)
-{
-    static id0_int_t angles[2][VIEWWIDTH];
-    static double cachedShift[2] = {32767.0, 32767.0};
-    static fixed cachedScale[2] = {-1, -1};
-    const int slot = shift < 0.0 ? 0 : 1;
-    const double fineToAngle = (double)FINEANGLES / (2.0 * PI);
-    const double angleUnit = (double)ANGLES / (2.0 * PI);
-    /* Reconstruct Catacomb's actual half-pixel view centre. BStone
-     * uses the same +0.5 for its per-eye fractional optical centre;
-     * projection, frustum and sprite coordinates must all agree. */
-    const double xCenter = (double)CENTERX + 0.5 + shift;
-    const double projectionScale = (double)scale / (double)FOCALLENGTH;
-    if (cachedShift[slot] != shift || cachedScale[slot] != scale) {
-        for (int x = 0; x < VIEWWIDTH; ++x)
-            angles[slot][x] = (id0_int_t)(
-                atan((xCenter - x) * projectionScale) * fineToAngle);
-        cachedShift[slot] = shift;
-        cachedScale[slot] = scale;
-    }
-    memcpy(pixelangle, angles[slot], sizeof pixelangle);
-    /* Trace half a pixel beyond each edge, matching xCenter above. */
-    firstangle = (id0_int_t)(atan((xCenter + 0.5) *
-        projectionScale) * angleUnit) + 1;
-    lastangle = -((id0_int_t)(atan((VIEWWIDTH - 0.5 - xCenter) *
-        projectionScale) * angleUnit) + 1);
-    prestep = GLOBAL1 * ((double)FOCALLENGTH / costable[firstangle]);
-    cat3dsStereoProjectionShift = shift;
-}
-
-/* CAT3DS_STEREO_V11: Keep the left and right cameras parallel as in
- * BStone. The EGA viewport is now rendered at BStone's 5:3 horizontal FOV,
- * approximately 74.6 degrees instead of the DOS view's 39.2 degrees.
- * A world-space zero-parallax plane 2.0 tiles ahead of the focal camera
- * balances the visible disparity without flattening the perspective. */
 static double Cat3DS_ProjectionShift(fixed eyeOffset)
 {
-    if (!eyeOffset || scale <= 0) return 0.0;
-    const double zeroParallax = CAT3DS_STEREO_ZERO_PARALLAX * (double)TILEGLOBAL;
-    return (double)eyeOffset * (double)FOCALLENGTH /
-           ((double)scale * zeroParallax);
+    return Cat3DS_LensShift((double)eyeOffset / TILEGLOBAL, (double)FOCALLENGTH / scale);
 }
 
-#endif
-
-#ifdef __3DS__
-/* CAT3DS_STEREO_V11: The V9/V10 mapper reconstructed a texel from
- * viewxpix/viewypix, which had already lost ten bits of the camera's
- * fractional position. Near a texel boundary a negligible stereo baseline
- * could change nearly every wall column at once. Instead sample the actual
- * continuous ray/wall intersection calculated by the DDA. This has no
- * camera-origin quantisation and does not change the DOS 2D mapper.
- * The face flips match Catacomb's original DrawVWall orientation. */
-static int Cat3DS_WallTextureColumn(double worldHit, int hitSide,
-                                    int stepX, int stepY)
-{
-    const double texel = (worldHit - floor(worldHit)) * 64.0;
-    int column = (int)floor(texel);
-    if (column < 0) column = 0;
-    if (column > 63) column = 63;
-    if ((hitSide && stepX < 0) || (!hitSide && stepY > 0))
-        column = 63 - column;
-    return column;
-}
 #endif
 
 #ifdef __3DS__
@@ -1701,85 +1680,38 @@ static void Cat3DS_DrawStereoColumns(void)
     const double rx = -fy, ry = fx;
     const double lens = (double)CENTERX + 0.5 + cat3dsStereoProjectionShift;
     const double invFocalPixels = (double)scale / (double)FOCALLENGTH;
-    const int maxSteps = (mapwidth + mapheight + 2) * 2;
+
 
     /* One independently traced surface/depth per screen column, rather
        than shared wall outlines stretching across both perspectives. */
-    memset(wallwidth, 0, sizeof(id0_unsigned_t) * VIEWWIDTH);
+    if (viewPass != centerVisibility) {
+        memset(wallwidth, 0, sizeof wallwidth);
     /* ScaleShape compares its own size against zbuffer, not wallheight.
        V7 never refreshed zbuffer, so sprites were drawn through walls.
        Clear it for each eye to prevent stale entries on empty columns. */
-    memset(zbuffer, 0, sizeof zbuffer);
-    ClearScreen();
+        memset(zbuffer, 0, sizeof zbuffer);
+        ClearScreen();
+    }
     for (int x = VIEWX; x <= VIEWXH; ++x) {
         const double raySide = ((double)x - lens) * invFocalPixels;
         const double dx = fx + rx * raySide;
         const double dy = fy + ry * raySide;
         /* The ray direction is unnormalised: its parameter is already
            the perpendicular optical depth, with no fisheye distortion. */
-        const double nearPlane = (double)FOCALLENGTH * invTile;
-        const double startX = originX + dx * (nearPlane + 0.00001);
-        const double startY = originY + dy * (nearPlane + 0.00001);
-        int tx = (int)floor(startX);
-        int ty = (int)floor(startY);
-        const int stepX = dx < 0.0 ? -1 : 1;
-        const int stepY = dy < 0.0 ? -1 : 1;
-        const double deltaX = dx != 0.0 ? 1.0 / fabs(dx) : 1.0e30;
-        const double deltaY = dy != 0.0 ? 1.0 / fabs(dy) : 1.0e30;
-        double nextX = dx > 0.0 ? ((double)(tx + 1) - startX) * deltaX
-                       : dx < 0.0 ? (startX - (double)tx) * deltaX : 1.0e30;
-        double nextY = dy > 0.0 ? ((double)(ty + 1) - startY) * deltaY
-                       : dy < 0.0 ? (startY - (double)ty) * deltaY : 1.0e30;
-        int hitSide = -1;
-        double hitDepth = 0.0;
-        int color = 0;
-        for (int i = 0; i < maxSteps; ++i) {
-            if (tx < 0 || ty < 0 || tx >= mapwidth || ty >= mapheight)
-                break;
-            /* The player starts in an empty tile. Mark every actual ray
-               traversal for the EXISTING sprite visibility calculations. */
-            if (tilemap[tx][ty]) {
-                color = tilemap[tx][ty];
-                if (hitSide == -1) {
-                    /* Unusual: already inside a solid tile on the near
-                       plane. Keep that column empty instead of inventing
-                       a wall face or reading outside the map. */
-                    color = 0;
-                }
-                break;
-            }
-            spotvis[tx][ty] = true;
-            if (nextX < nextY) {
-                hitDepth = nearPlane + 0.00001 + nextX;
-                nextX += deltaX;
-                tx += stepX;
-                hitSide = 1; /* Constant X: light face. */
-            } else {
-                hitDepth = nearPlane + 0.00001 + nextY;
-                nextY += deltaY;
-                ty += stepY;
-                hitSide = 0; /* Constant Y: dark face. */
-            }
-        }
-        if (color <= 0 || color >= NUMFLOORS || hitDepth <= 0.0)
-            continue;
-        const int texPic = hitSide ?
+        const Cat3DSWallHit hit = Cat3DS_TraceColumn(tilemap[0], spotvis[0], MAPSIZE,
+            mapwidth, mapheight, originX, originY, dx, dy, (double)FOCALLENGTH * invTile);
+        if (viewPass == centerVisibility) continue;
+        cat3dsWallDepth[x] = (fixed)(hit.depth * TILEGLOBAL);
+        const int color = hit.tile;
+        if (!color || color >= NUMFLOORS) continue;
+        const int texPic = hit.side ?
             (animframe ? walllight2[color] : walllight1[color]) :
             (animframe ? walldark2[color] : walldark1[color]);
-        if (texPic < FIRSTWALLPIC)
+        if (texPic < FIRSTWALLPIC || texPic - FIRSTWALLPIC >= NUMSCALEWALLS)
             continue;
-        /* Use the world-space hit point, with one continuous texture
-         * coordinate system shared by both eyes. */
-        const double hitAlongWall = hitSide ?
-            (originY + hitDepth * dy) :
-            (originX + hitDepth * dx);
-        const int column = Cat3DS_WallTextureColumn(hitAlongWall,
-                                                    hitSide, stepX, stepY);
-        const double ratio = hitDepth * (double)scale;
-        int height = ratio > 0.0 ?
-            (int)((double)TILEGLOBAL / (2.0 * ratio)) : MAXSCALE;
-        if (height < 1) height = 1;
-        if (height > MAXSCALE) height = MAXSCALE;
+        const int column = hit.column;
+        const double ratio = hit.depth * (double)scale;
+        const int height = (int)fmax(1, fmin(MAXSCALE, TILEGLOBAL / (2.0 * ratio)));
         wallheight[x] = (id0_unsigned_t)height;
         zbuffer[x] = (id0_int_t)height;
         wallwidth[x] = 1;
@@ -1787,7 +1719,7 @@ static void Cat3DS_DrawStereoColumns(void)
         wallofs[x] = (id0_unsigned_t)(column * 64);
     }
 #ifndef DRAWEACH
-    ScaleWalls();
+    if (viewPass != centerVisibility) ScaleWalls();
 #endif
 }
 #endif
@@ -1843,6 +1775,14 @@ asm	rep stosw
     viewx += 0x180;
     viewy += 0x180;
 #endif
+#ifdef __3DS__
+    if (viewPass == centerVisibility) {
+        Cat3DS_DrawStereoColumns();
+        DrawScaleds();
+        memcpy(centerSpotvis, spotvis, sizeof spotvis);
+        return;
+    }
+#endif
     /* The continuous DDA hit point now supplies stereo wall UVs.
      * Retain this quantised coordinate only for the untouched DOS 2D path. */
     viewxpix = viewx>>10;
@@ -1887,7 +1827,10 @@ asm	rep stosw
 //
 // actually draw stuff
 //
-	if (++screenpage == 3)
+#ifdef __3DS__
+    if (!lastEye || !eyeOffset)
+#endif
+    if (++screenpage == 3)
 		screenpage = 0;
 
 	bufferofs = screenloc[screenpage];
@@ -1898,7 +1841,10 @@ asm	rep stosw
 //
 // draw the wall list saved be FollowWalls ()
 //
-	animframe = (SD_GetTimeCount()&8)>>3;
+#ifdef __3DS__
+    if (!lastEye || !eyeOffset)
+#endif
+    animframe = (SD_GetTimeCount()&8)>>3;
 
 //
 // draw all the scaled images
@@ -1947,6 +1893,7 @@ asm	rep stosw
 // show screen and time last cycle
 //
 #ifdef __3DS__
+	if (lastEye) Cat3DS_DualScreenReportRenderTicks(SDL_GetPerformanceCounter() - renderStart);
 	if (fizzlein && lastEye)
 #else
 	if (fizzlein)
@@ -1964,6 +1911,7 @@ asm	rep stosw
 	}
 
 #ifdef __3DS__
+	if (lastEye && viewPass == eyeView) memcpy(spotvis, centerSpotvis, sizeof spotvis);
 	if (lastEye)
 		Cat3DS_DualScreenObserve(gamestate.mapon, mapwidth, mapheight,
 			&tilemap[0][0], &spotvis[0][0], player->x, player->y, player->angle);
@@ -2009,15 +1957,11 @@ asm	sti
  * gameplay with the same wide horizontal FOV as stereoscopic gameplay. */
 void ThreeDRefresh(void)
 {
-    const uint64_t start = SDL_GetPerformanceCounter();
-    id0_int_t savedAngles[VIEWWIDTH];
-    memcpy(savedAngles, pixelangle, sizeof savedAngles);
-    const id0_int_t savedFirst = firstangle, savedLast = lastangle;
-    const fixed savedPrestep = prestep;
+    renderStart = SDL_GetPerformanceCounter();
     const fixed savedScale = scale;
     /* Use the same BStone-matched horizontal optics with slider off/on. */
     scale = CAT3DS_STEREO_FOV_SCALE;
-    int offset = Cat3DS_DualScreenStereoOffset();
+    int offset = fizzlein ? 0 : Cat3DS_DualScreenStereoOffset();
     if (offset > 0) {
         /* Keep the physical eye centers in open map cells. Both eyes MUST
          * use the same baseline, or stereo becomes asymmetric. The virtual
@@ -2027,6 +1971,11 @@ void ThreeDRefresh(void)
         const fixed perpY = costable[player->angle];
         const fixed focX = player->x - FixedByFrac(FOCALLENGTH, perpY);
         const fixed focY = player->y + FixedByFrac(FOCALLENGTH, perpX);
+        offset = Cat3DS_LimitCornerOffset(offset, tilemap[0], MAPSIZE, mapwidth, mapheight,
+            (double)focX / TILEGLOBAL, (double)focY / TILEGLOBAL,
+            (double)FixedByFrac(GLOBAL1, perpY) / TILEGLOBAL,
+            -(double)FixedByFrac(GLOBAL1, perpX) / TILEGLOBAL,
+            VIEWWIDTH, (double)FOCALLENGTH / scale);
         /* At small slider values the baseline is already close to zero.
          * If either eye moves into a solid tile, halve both offsets
          * symmetrically to avoid broken single-eye geometry. */
@@ -2049,23 +1998,31 @@ void ThreeDRefresh(void)
     if (offset > 0) {
         /* Independent eye projections, restored with the original DOS
          * tables below before returning to the rest of the engine. */
-        Cat3DS_SetEyeProjection(Cat3DS_ProjectionShift(-offset));
+        viewPass = centerVisibility;
+        cat3dsStereoProjectionShift = 0.0;
+        Cat3DS_ThreeDRefreshEye(0, 0);
+        viewPass = eyeView;
+        cat3dsStereoProjectionShift = Cat3DS_ProjectionShift(-offset);
         Cat3DS_ThreeDRefreshEye(-offset, 0);
         Cat3DS_DualScreenCaptureLeftEGA(bufferofs);
-        Cat3DS_SetEyeProjection(Cat3DS_ProjectionShift(+offset));
+        cat3dsStereoProjectionShift = Cat3DS_ProjectionShift(+offset);
         Cat3DS_ThreeDRefreshEye(+offset, 1);
+        viewx -= FixedByFrac(offset, viewsin);
+        viewy -= FixedByFrac(offset, viewcos);
+        viewxpix = viewx >> 10;
+        viewypix = viewy >> 10;
+        focal.x = viewx >> TILESHIFT;
+        focal.y = viewy >> TILESHIFT;
     } else {
-        Cat3DS_SetEyeProjection(0.0);
+        viewPass = monoView;
+        cat3dsStereoProjectionShift = 0.0;
         Cat3DS_DualScreenForgetStereo();
         Cat3DS_ThreeDRefreshEye(0, 1);
     }
-    memcpy(pixelangle, savedAngles, sizeof savedAngles);
-    firstangle = savedFirst;
-    lastangle = savedLast;
-    prestep = savedPrestep;
+    viewPass = monoView;
     scale = savedScale;
     cat3dsStereoProjectionShift = 0.0;
-    Cat3DS_DualScreenReportRenderTicks(SDL_GetPerformanceCounter() - start);
+
 }
 #endif
 

@@ -1512,7 +1512,7 @@ void CAL_ExpandGrChunk (id0_int_t chunk, id0_byte_t id0_far *source)
 /* Only used by this port. The native staging allocation never participates
  * in MM_SortMem, so decompressing cannot invalidate the compressed input.
  * The game still uses ReflectionHLE's original CAL_ExpandGrChunk function. */
-#if defined(REFKEEN_VER_CAT3D) || defined(REFKEEN_VER_CATABYSS)
+#if defined(REFKEEN_VER_CAT3D) || defined(REFKEEN_VER_CATABYSS) || defined(REFKEEN_VER_CATARM) || defined(REFKEEN_VER_CATAPOC)
 // Read only the DOS map header. CA_CacheMap would discard the active planes.
 bool Cat3DS_MapDimensions(int level, unsigned &width, unsigned &height)
 {

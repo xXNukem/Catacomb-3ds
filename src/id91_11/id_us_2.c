@@ -407,6 +407,18 @@ static  id0_boolean_t USL_ConfigCustom(UserCall call,struct UserItem id0_far *it
 		{uii_Bad}
 	};
 	UserItemGroup   id0_far rootgroup = {32,4,CP_MAINMENUPIC,sc_None,rooti};
+#if defined(__3DS__) && defined(REFKEEN_VER_CAT3D)
+    // Keep legacy configuration, difficulty and the minigame accessible
+    // without nesting a second pause/save/exit menu under the native one.
+    static UserItem nativeExtras[] = {
+        {DefFolder(sc_C,"CONFIGURE",&configgroup)},
+        {DefFolder(sc_N,"NEW GAME (DIFFICULTY)",&newgamegroup)},
+        {DefFolder(sc_B,"SKULL 'N' BONES",&ponggroup)},
+        {DefButton(sc_E,"END GAME"),uc_Abort},
+        {uii_Bad}
+    };
+    static UserItemGroup nativeExtrasGroup = {8,0,CP_CONFIGMENUPIC,sc_None,nativeExtras};
+#endif
 #undef  DefButton
 #undef  DefFolder
 
@@ -441,7 +453,12 @@ USL_SetupStack(void)
 	cardstack[0] = topcard = root;
 #else
 	cstackptr = 0;
-	cardstack[0] = topcard = &rootgroup;
+	#if defined(__3DS__) && defined(REFKEEN_VER_CAT3D)
+    nativeExtras[3].flags = ingame ? 0 : ui_Disabled;
+    cardstack[0] = topcard = &nativeExtrasGroup;
+#else
+    cardstack[0] = topcard = &rootgroup;
+#endif
 #endif
 }
 
@@ -1809,7 +1826,13 @@ USL_SetupCard(void)
 {
 	BottomS1 = "Arrows move";
 	BottomS2 = "Enter selects";
-	BottomS3 = cstackptr? "ESC to back out" : "ESC to quit";
+	#if defined(__3DS__) && defined(REFKEEN_VER_CAT3D)
+    BottomS1 = "D-pad moves";
+    BottomS2 = "A selects";
+    BottomS3 = "B goes back";
+#else
+    BottomS3 = cstackptr? "ESC to back out" : "ESC to quit";
+#endif
 
 	USL_SelectItem(topcard,topcard->cursor,false);
 	USL_DrawCtlPanel();     // Contents?
@@ -1817,6 +1840,19 @@ USL_SetupCard(void)
 
 #if defined(__3DS__) && defined(REFKEEN_VER_CAT3D)
 #include "cat3ds_slot_menu.inc"
+void Cat3DS_GameSlots(bool saving)
+{
+    CA_CacheGrChunk(STARTFONT+1);
+    US_SetPrintRoutines(VW_MeasurePropString,VWB_DrawPropString);
+    fontcolor = F_BLACK;
+    fontnumber = 1;
+    VW_InitDoubleBuffer();
+    if (Cat3DS_RunSlots(saving)) {
+        if (saving) GameIsDirty = false;
+        else loadedgame = true;
+    }
+    fontnumber = 0;
+}
 #endif
 
 static void
@@ -1854,7 +1890,9 @@ USL_UpLevel(void)
 {
 	if (!cstackptr)
 	{
-#ifdef BIOMENACE
+#if defined(__3DS__) && defined(REFKEEN_VER_CAT3D)
+        USL_ConfirmComm(uc_Return);
+#elif defined(BIOMENACE)
 		if (menutype == 0)
 			USL_ConfirmComm(uc_Quit);
 		else

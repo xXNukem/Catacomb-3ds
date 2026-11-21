@@ -16,6 +16,8 @@ configure_file("../refkeen_config.h.in" "generated/refkeen_config.h" COPYONLY)
 include("${ROOT}/src/CMakeLists.txt")
 include("${ROOT}/src/id91_11/cat_all/cat3d/CMakeLists.txt")
 include("${ROOT}/src/id91_11/cat_all/catabyss/CMakeLists.txt")
+include("${ROOT}/src/id91_11/cat_all/catarm/CMakeLists.txt")
+include("${ROOT}/src/id91_11/cat_all/catapoc/CMakeLists.txt")
 list(REMOVE_ITEM be_src
   "src/actual_main.c"
   "src/backend/misc/be_misc_lpt_linux.c"
@@ -30,6 +32,7 @@ list(REMOVE_DUPLICATES be_src)
 set(ENGINE_SOURCES
   "${CMAKE_CURRENT_LIST_DIR}/refkeen_original_main.c"
   "${CMAKE_CURRENT_LIST_DIR}/cat3ds_sdl_launcher.cpp"
+  "${CMAKE_CURRENT_LIST_DIR}/cat3ds_menu.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/cat3ds_dualscreen.c"
   "${ROOT}/platform/3ds/source/cat3ds_game_files.cpp"
   "${ROOT}/platform/3ds/source/cat3ds_resource_probe.cpp"
@@ -51,10 +54,10 @@ set(CAT3DS_INCLUDED_DIRS
 set(CAT3DS_COMMON_DEFS
     __3DS__=1 REFKEEN_UNIFIED_BUILD=1
     REFKEEN_HAS_VER_CAT3D=1 REFKEEN_HAS_VER_CATADVENTURES=1
-    REFKEEN_HAS_VER_CATABYSS=1 REFKEEN_HAS_VER_CATACOMB_ALL=1
+    REFKEEN_HAS_VER_CATAPOC=1 REFKEEN_HAS_VER_CATARM=1 REFKEEN_HAS_VER_CATABYSS=1 REFKEEN_HAS_VER_CATACOMB_ALL=1
     REFKEEN_CONFIG_THREADS=1 REFKEEN_CONFIG_ENABLE_CMDLINE=1)
 
-foreach(engine IN ITEMS cat3d catabyss)
+foreach(engine IN ITEMS cat3d catabyss catarm catapoc)
   set(engine_sources "")
   foreach(rel IN LISTS ${engine}_src)
     if(NOT EXISTS "${ROOT}/${rel}")
@@ -69,6 +72,10 @@ foreach(engine IN ITEMS cat3d catabyss)
   target_compile_definitions(cat3ds_engine_${engine} PRIVATE ${CAT3DS_COMMON_DEFS})
   target_compile_options(cat3ds_engine_${engine} PRIVATE -O2 -ffunction-sections -fdata-sections -fno-exceptions)
 endforeach()
+target_include_directories(cat3ds_engine_catarm BEFORE PRIVATE "${ROOT}/src/id91_11/cat_all/catarm" "${ROOT}/src/id91_11/cat_all/cat_late")
+target_include_directories(cat3ds_engine_catapoc BEFORE PRIVATE "${ROOT}/src/id91_11/cat_all/catapoc" "${ROOT}/src/id91_11/cat_all/cat_late")
+target_compile_definitions(cat3ds_engine_catarm PRIVATE REFKEEN_VER_CATADVENTURES=1 REFKEEN_VER_CATARM=1 REFKEEN_VER_CATACOMB_ALL=1)
+target_compile_definitions(cat3ds_engine_catapoc PRIVATE REFKEEN_VER_CATADVENTURES=1 REFKEEN_VER_CATAPOC=1 REFKEEN_VER_CATACOMB_ALL=1)
 target_compile_definitions(cat3ds_engine_cat3d PRIVATE REFKEEN_VER_CAT3D=1 REFKEEN_VER_CATACOMB_ALL=1)
 target_compile_definitions(cat3ds_engine_catabyss PRIVATE
   REFKEEN_VER_CATADVENTURES=1 REFKEEN_VER_CATABYSS=1 REFKEEN_VER_CATACOMB_ALL=1)
@@ -86,12 +93,16 @@ set_source_files_properties(
   PROPERTIES LANGUAGE CXX)
 list(APPEND ENGINE_SOURCES
   $<TARGET_OBJECTS:cat3ds_engine_cat3d>
-  $<TARGET_OBJECTS:cat3ds_engine_catabyss>)
+  $<TARGET_OBJECTS:cat3ds_engine_catabyss>
+  $<TARGET_OBJECTS:cat3ds_engine_catarm>
+  $<TARGET_OBJECTS:cat3ds_engine_catapoc>)
 
 find_package(SDL3 CONFIG REQUIRED COMPONENTS SDL3)
 # Object-library sources compile independently; they need SDL3 headers too.
 target_link_libraries(cat3ds_engine_cat3d PRIVATE SDL3::SDL3)
 target_link_libraries(cat3ds_engine_catabyss PRIVATE SDL3::SDL3)
+target_link_libraries(cat3ds_engine_catarm PRIVATE SDL3::SDL3)
+target_link_libraries(cat3ds_engine_catapoc PRIVATE SDL3::SDL3)
 
 # ReflectionHLE's version header expects a generated Git-ID header.
 file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/generated")
@@ -114,3 +125,24 @@ ctr_generate_smdh(cat3ds-original.smdh
   AUTHOR "xXNukem"
   ICON "${CMAKE_CURRENT_LIST_DIR}/icon.png")
 ctr_create_3dsx(cat3ds-original SMDH cat3ds-original.smdh)
+
+# Group the original DOS engines' and ReflectionHLE backend's writable
+# static storage. Keep CRT, SDL, libctru and the selector outside the ranges.
+execute_process(COMMAND "${CMAKE_CXX_COMPILER}" -print-file-name=3dsx.ld
+  OUTPUT_VARIABLE ctr_script OUTPUT_STRIP_TRAILING_WHITESPACE)
+file(READ "${ctr_script}" session_script)
+foreach(section data bss)
+  set(pattern "*(.${section})")
+  string(FIND "${session_script}" "${pattern}" position)
+  if(position EQUAL -1)
+    message(FATAL_ERROR "Unsupported 3DS linker script: missing ${pattern}")
+  endif()
+  string(REPLACE "${pattern}"
+    "__cat3ds_${section}_begin = .;\n *cat3ds_engine_*.dir/*(.${section} .${section}.*)\n *cat3ds-original.dir/*/src/*(.${section} .${section}.*)\n __cat3ds_${section}_end = .;\n ${pattern}"
+    session_script "${session_script}")
+endforeach()
+set(session_dir "${CMAKE_CURRENT_BINARY_DIR}/generated/session")
+file(MAKE_DIRECTORY "${session_dir}")
+file(WRITE "${session_dir}/3dsx.ld" "${session_script}")
+target_link_options(cat3ds-original PRIVATE "-B${session_dir}/")
+set_property(TARGET cat3ds-original APPEND PROPERTY LINK_DEPENDS "${session_dir}/3dsx.ld")

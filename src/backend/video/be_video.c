@@ -659,7 +659,7 @@ static bool BEL_ST_UpdateTextureForEGAVGAMode(void)
 #ifdef __3DS__
 	/* CAT3DS_NATIVE_EGA_READ_FAST_V2: avoid full EGA cache compare
 	 * and copy during gameplay; menu path remains unchanged. */
-	if (g_sdlScreenMode == 0x0D && Cat3DS_DualScreenHasGameplayFrame())
+	if (Cat3DS_DualScreenHandlesMode(g_sdlScreenMode))
 	{
 		g_sdlDoRefreshGfxOutput = false;
 		return true;
@@ -698,7 +698,7 @@ static bool BEL_ST_UpdateTextureForEGAVGAMode(void)
 #ifdef __3DS__
 	/* CAT3DS_NATIVE_EGA_UPLOAD_SKIP_V1: indexed pixels are already
 	 * available. The native 3DS compositor consumes them directly. */
-	if (g_sdlScreenMode == 0x0D && Cat3DS_DualScreenHasGameplayFrame())
+	if (Cat3DS_DualScreenHandlesMode(g_sdlScreenMode))
 	{
 		g_sdlDoRefreshGfxOutput = false;
 		return true;
@@ -745,7 +745,7 @@ void BEL_ST_UpdateHostDisplay(void)
 #ifdef __3DS__
 	/* CAT3DS_NATIVE_EGA_PRESENT_V1: gameplay avoids SDL texture
 	 * upload, software scaling, render target composition and present. */
-	if (g_sdlScreenMode == 0x0D && Cat3DS_DualScreenHasGameplayFrame())
+	if (Cat3DS_DualScreenHandlesMode(g_sdlScreenMode))
 	{
 		Cat3DS_DualScreenPresent(g_sdlHostScrMem.egaGfx, g_sdlTexWidth,
 		                           g_sdlEGACurrBGRAPalette);

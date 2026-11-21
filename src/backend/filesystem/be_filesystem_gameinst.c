@@ -33,6 +33,9 @@
 #include "be_filesystem_string_ops.h"
 #include "be_st.h"
 #include "crc32/crc32.h"
+#if defined(__3DS__) && defined(REFKEEN_HAS_VER_CATAPOC)
+#include "cat3ds_apocalypse.h"
+#endif
 
 #include <string.h>
 
@@ -165,6 +168,11 @@ void BEL_Cross_ConditionallyAddGameInstallation_WithReturnedErrMsg(
 
 	for (const BE_GameFileDetails_T *fileDetailsBuffer = details->reqFiles; fileDetailsBuffer->filenames; ++fileDetailsBuffer)
 	{
+#if defined(__3DS__) && defined(REFKEEN_HAS_VER_CATAPOC)
+        if (details->verId == BE_GAMEVER_CATAPOC101 &&
+            !cat3dsApocalypseGameplayFile(fileDetailsBuffer->filenames))
+            continue;
+#endif
 		// Check at input path as passed to function
 		int ret = BEL_Cross_CheckGameFileDetails(fileDetailsBuffer, searchdir, NULL);
 		if (ret != 2)

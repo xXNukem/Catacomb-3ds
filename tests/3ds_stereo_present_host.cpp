@@ -1,0 +1,87 @@
+#include "cat3ds_dualscreen.c"
+#include <cassert>
+const uint8_t g_cga_8x8TextFont[256*64]={};
+int main(){
+    uint8_t src[200][327]={}, tiles[64][64]={}, visible[64][64]={};
+    uint32_t pal[256]={}; pal[1]=0xff0000;pal[2]=0x00ff00;
+    for(int y=0;y<200;++y) memset(src[y], y<120?1:2, 320);
+    auto present=[&]{Cat3DS_DualScreenPresent(src[0],327,pal);};
+    auto observe=[&]{Cat3DS_DualScreenObserve(1,64,64,tiles[0],visible[0],4<<16,5<<16,90);};
+    Cat3DS_DualScreenStartAdventure(); assert(Cat3DS_DualScreenHasGameplayFrame()); present();
+    assert(!hwStereo && top[39*240]==0 && top[40*240]==0x07e0 && bot[0]==0);
+    g_sdlScreenMode = 0x0e;
+    assert(Cat3DS_DualScreenHandlesMode(0x0e));
+    static uint8_t wide[200][640];
+    memset(wide, 1, sizeof wide);
+    for (auto &row : wide) memset(row+320, 2, 320);
+    Cat3DS_DualScreenPresent(wide[0],640,pal);
+    assert(top[199*240]==0xf800 && top[200*240]==0x07e0);
+    g_sdlScreenMode = 0x0d;
+    visible[2][3]=1; tiles[2][4]=1; observe(); present();
+    assert(explored[2*64+3] && explored[2*64+4] && explored[4*64+5] && !explored[0]);
+    assert(top[239-29]==0 && top[239-30]==0xf800 && top[239-210]==0);
+    for(int x=0;x<320;++x)for(int y=120;y<200;++y) assert(bot[x*240+239-y]==0x07e0);
+    memset(g_sdlVidMem.A000.gfxByByte,2,sizeof g_sdlVidMem.A000.gfxByByte);
+    Cat3DS_DualScreenCaptureLeftEGA(0x2000);
+    present(); assert(hwStereo && top[100]==0x07e0 && rightEye[100]==0xf800);
+    g_sdlSplitScreenLine=-1;
+    g_sdlPelPanning=3;
+    g_sdlVidMem.A000.gfxByByte[0x2000*8+3]=1;
+    Cat3DS_DualScreenCaptureLeftEGA(0x2000);
+    present(); assert(hwStereo && top[239-30]==0xf800);
+    g_sdlSplitScreenLine=17;
+    Cat3DS_DualScreenCaptureLeftEGA(0x2000);
+    present(); assert(!hwStereo);
+    g_sdlSplitScreenLine=199;
+    g_sdlPelPanning=0;
+    Cat3DS_DualScreenCaptureLeftEGA(65535);
+    present(); assert(!hwStereo);
+    Cat3DS_DualScreenCaptureLeftEGA(0x2000);
+    Cat3DS_DualScreenBeginLevelTransition(); present(); assert(!hwStereo && top[40*240]==0x07e0);
+    memset(visible,0,sizeof visible); observe(); present(); assert(explored[2*64+3] && !stereoModalActive);
+    Cat3DS_DualScreenBeginLevelTransition(); Cat3DS_DualScreenBeginLevel(2,64,64);
+    assert(!explored[2*64+3] && Cat3DS_DualScreenHasGameplayFrame());
+    Cat3DS_DualScreenSetGameplay(0); assert(!Cat3DS_DualScreenHasGameplayFrame() && !topConfigured);
+    Cat3DS_DualScreenSetGameplay(1); observe(); present(); assert(layout.sourceWidth==264 && layout.sourceHeight==144);
+    assert(bot[264*240+239]==0xf800 && bot[319*240+239-143]==0x07e0);
+    assert(bot[239-144]==0x07e0 && bot[239]==0);
+    Cat3DS_DualScreenCaptureLeftEGA(0x2000);
+    present(); assert(hwStereo && top[100]==0x07e0 && rightEye[100]==0xf800);
+    Cat3DS_DualScreenSetModalOverlay(1);
+    assert(Cat3DS_DualScreenStereoOffset()==0);
+    present(); assert(!hwStereo);
+    Cat3DS_DualScreenSetModalOverlay(0);
+    present(); assert(!hwStereo);
+    Cat3DS_DualScreenEnterMenu();
+    top[100] = 0x1234;
+    present();
+    assert(!hwStereo && top[100] == 0x1234 && !bot[100]);
+    Cat3DS_DualScreenLeaveMenu();
+    present();
+    assert(!hwStereo);
+    Cat3DS_DualScreenCaptureLeftEGA(0x2000);
+    present();
+    assert(hwStereo && top[100]==0x07e0 && rightEye[100]==0xf800);
+    slider=0; assert(Cat3DS_DualScreenStereoOffset()==0);
+    assert(quota==15 && !workerEnabled); // failed thread creation restored the previous quota
+    resetPerformanceWindow();
+    updateFps(100);
+    for (unsigned i=1; i<=50; ++i) updateFps(100+20*i);
+    assert(fpsHasSample && fpsTimes10==500 && perfPeakMs==20);
+    Cat3DS_DualScreenSetModalOverlay(1);
+    assert(!fpsHasSample && !perfLastPresent);
+    present();
+    assert(!fpsFrames && !perfVideoCount);
+    Cat3DS_DualScreenSetModalOverlay(0);
+    for (int core=1; core<=2; ++core) {
+        Cat3DS_DualScreenShutdown();
+        availableCore=core;
+        Cat3DS_DualScreenCaptureLeftEGA(0x2000);
+        present();
+        assert(workerEnabled && workerRunningCore==core && quota==(core==1 ? 30u : 15u));
+        assert(hwStereo && top[100]==0x07e0 && rightEye[100]==0xf800);
+        Cat3DS_DualScreenShutdown();
+        assert(!workerEnabled && !workerThread && quota==15);
+    }
+    puts("PASS: native presenter, split HUD, exploration, modal return, level and engine changes");
+}

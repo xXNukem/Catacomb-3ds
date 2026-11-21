@@ -42,6 +42,8 @@ typedef struct Cat3DSInstallStatus {
     unsigned resourceDictOffset;
 } Cat3DSInstallStatus;
 
+bool cat3dsCanLaunchApocalypse(const Cat3DSInstallStatus &status);
+bool cat3dsCanLaunchArmageddon(const Cat3DSInstallStatus &status);
 const char *cat3dsGameName(int game);
 const char *cat3dsGameFolder(int game);
 void cat3dsScanInstallations(Cat3DSInstallStatus out[CAT3DS_GAME_COUNT]);

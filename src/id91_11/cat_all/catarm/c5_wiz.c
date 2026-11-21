@@ -23,6 +23,11 @@
 #include "gelib.h"
 //#pragma hdrstop
 
+#ifdef __3DS__
+#include "cat3ds_dualscreen.h"
+#include "cat3ds_menu.h"
+#endif
+
 REFKEEN_NS_B
 
 /*
@@ -807,6 +812,25 @@ id0_char_t DisplayMsg(const id0_char_t *text,const id0_char_t *choices)
 	id0_char_t ch=true;
 	id0_short_t temp;
 
+#ifdef __3DS__
+    if (choices) {
+        Cat3DS_DualScreenSetModalOverlay(1);
+        WindowRec window;
+        US_SaveWindow(&window);
+        bufferofs = displayofs;
+        CenterWindow(36, 3);
+        US_CPrint(text);
+        VW_UpdateScreen();
+        ch = GetKeyChoice(choices, true);
+        Cat3DS_WaitForPadRelease();
+        IN_ClearKeysDown();
+        Cat3DS_DualScreenSetModalOverlay(0);
+        LastScan = 0;
+        US_RestoreWindow(&window);
+        bufferofs = 0;
+        return ch;
+    }
+#endif
 	bufferofs = 0;
 	PrintY = 1;
 	WindowX = 20;

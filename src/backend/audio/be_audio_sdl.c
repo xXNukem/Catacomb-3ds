@@ -140,6 +140,7 @@ bool BEL_ST_InitAudioSubsystem(int *freq, int *channels, int *bufferLen)
 	{
 		BE_Cross_LogMessage(BE_LOG_MSG_ERROR, "Cannot create recursive mutex for SDL audio callback,\n%s\nClosing SDL audio subsystem\n", SDL_GetError());
 		SDL_DestroyAudioStream(g_sdlAudioStream);
+		g_sdlAudioStream = NULL;
 		SDL_QuitSubSystem(SDL_INIT_AUDIO);
 		return false;
 	}
@@ -163,12 +164,12 @@ bool BEL_ST_InitAudioSubsystem(int *freq, int *channels, int *bufferLen)
 void BEL_ST_ShutdownAudioSubsystem(void)
 {
 	SDL_PauseAudioDevice(SDL_GetAudioStreamDevice(g_sdlAudioStream));
-	BEL_ST_AudioMixerShutdown();
+	SDL_DestroyAudioStream(g_sdlAudioStream);
+	g_sdlAudioStream = NULL;
 #ifdef REFKEEN_CONFIG_THREADS
 	SDL_DestroyMutex(g_sdlCallbackMutex);
 	g_sdlCallbackMutex = NULL;
 #endif
-	SDL_DestroyAudioStream(g_sdlAudioStream);
 	SDL_QuitSubSystem(SDL_INIT_AUDIO);
 }
 

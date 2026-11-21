@@ -70,23 +70,19 @@ uint8_t BE_ST_GetFMSBProSoundVolumes(void)
 void BEL_ST_GenOPLSamples(BE_ST_SndSample_T *stream, int length)
 {
 	int16_t buffer[OPL_NUM_OF_SAMPLES * 2];
-	int i;
-
-	// length should be at least the max. samplesPerMusicTick
-	// in Catacomb 3-D and Keen 4-6, which is param_samplerate / 700.
-	// So 512 is sufficient for a sample rate of 358.4 kHz, which is
-	// significantly higher than the OPL rate anyway.
-	if(length > OPL_NUM_OF_SAMPLES)
-		length = OPL_NUM_OF_SAMPLES;
-
-	// Output is 16-bit stereo sound
-	OPL3_GenerateStream(&g_oplChip, buffer, length);
-	for(i = 0; i < length; i++)
+	while (length > 0)
+	{
+		int count = length < OPL_NUM_OF_SAMPLES ? length : OPL_NUM_OF_SAMPLES;
+		OPL3_GenerateStream(&g_oplChip, buffer, count);
+		for (int i = 0; i < count; ++i)
 #ifdef MIXER_SAMPLE_FORMAT_FLOAT
-		stream[i] = (float)buffer[2*i]/32767.0f;
+			stream[i] = (float)buffer[2*i]/32767.0f;
 #elif (defined MIXER_SAMPLE_FORMAT_SINT16)
-		stream[i] = buffer[2*i];
+			stream[i] = buffer[2*i];
 #endif
+		stream += count;
+		length -= count;
+	}
 }
 
 void BE_ST_OPL2Write(uint8_t reg, uint8_t val)

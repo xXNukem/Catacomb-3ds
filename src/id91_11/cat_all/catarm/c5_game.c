@@ -29,6 +29,10 @@
 #include "time.h"
 #endif
 
+#ifdef __3DS__
+#include "cat3ds_dualscreen.h"
+#endif
+
 REFKEEN_NS_B
 
 /*
@@ -1590,6 +1594,9 @@ void GameLoop (void)
 	BE_ST_AltControlScheme_Push();
 	PrepareGamePlayControllerMapping();
 
+#ifdef __3DS__
+	Cat3DS_DualScreenStartAdventure();
+#endif
 	DrawPlayScreen ();
 	IN_ClearKeysDown();
 
@@ -1677,6 +1684,9 @@ itoa(end-start,str,10);
 
 	// REFKEEN - Alternative controllers support
 popcontrollerscheme:
+#ifdef __3DS__
+	Cat3DS_DualScreenSetGameplay(0);
+#endif
 	BE_ST_AltControlScheme_Pop();
 }
 

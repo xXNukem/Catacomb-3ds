@@ -3,6 +3,7 @@
  * be_gamedefs_cat*.h files. This module does not redistribute game data.
  */
 #include "cat3ds_game_files.h"
+#include "cat3ds_apocalypse.h"
 #include "cat3ds_manifest.h"
 #include "cat3ds_resource_probe.h"
 
@@ -22,7 +23,7 @@ static const char *const kFolders[CAT3DS_GAME_COUNT] = {
     "sdmc:/3ds/catacomb-3ds/games/cat3d",
     "sdmc:/3ds/catacomb-3ds/games/catabyss",
     "sdmc:/3ds/catacomb-3ds/games/catarm",
-    "sdmc:/3ds/catacomb-3ds/games/catapoc"
+    CAT3DS_APOC_GAME_PATH
 };
 
 /* Safe and idempotent: mkdir is called on each fixed path only. Existing
@@ -36,7 +37,7 @@ bool cat3dsEnsureGameFolders(const char **failedPath)
         "sdmc:/3ds/catacomb-3ds/games/cat3d",
         "sdmc:/3ds/catacomb-3ds/games/catabyss",
         "sdmc:/3ds/catacomb-3ds/games/catarm",
-        "sdmc:/3ds/catacomb-3ds/games/catapoc"
+        CAT3DS_APOC_GAME_PATH
     };
     if (failedPath)
         *failedPath = NULL;
@@ -52,6 +53,18 @@ bool cat3dsEnsureGameFolders(const char **failedPath)
         return false;
     }
     return true;
+}
+
+bool cat3dsCanLaunchArmageddon(const Cat3DSInstallStatus &s)
+{
+    return s.directoryFound && s.fileCount == int(sizeof(cat3ds_files_catarm102) /
+                                                  sizeof(cat3ds_files_catarm102[0])) &&
+           s.validCount == s.fileCount;
+}
+
+bool cat3dsCanLaunchApocalypse(const Cat3DSInstallStatus &s)
+{
+    return s.directoryFound && s.coreFileCount == 4 && s.coreValidCount == 4;
 }
 
 const char *cat3dsGameName(int game)
@@ -116,7 +129,7 @@ static bool isPrincipalFile(int game, const char *versionName, const char *name)
     case 1: return strcmp(name, (versionName && strstr(versionName, "1.13")) ?
                            "CATABYSS.EXE" : "ABYSGAME.EXE") == 0;
     case 2: return strcmp(name, "ARMGAME.EXE") == 0;
-    case 3: return strcmp(name, "APOCGAME.EXE") == 0;
+    case 3: return cat3dsApocalypseGameplayFile(name);
     default: return false;
     }
 }
@@ -199,7 +212,7 @@ static FileResult locateExpectedFile(int game, const Cat3DSRequiredFile *expecte
         if (strlen(name) >= 128)
             continue;
         const bool sameName = sameNameIgnoreCase(name, expected->name);
-        const bool candidateExe = exe && isExeFilename(name);
+        const bool candidateExe = exe && game < 2 && isExeFilename(name);
         if (candidateExe && !foundExeName[0])
             copyFilename(foundExeName, name);
         if (!sameName && !candidateExe)

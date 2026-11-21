@@ -3,6 +3,7 @@
  * This file does NOT render any game scenes; it only selects an installation.
  */
 #include <3ds.h>
+#include <sys/iosupport.h>
 #include <SDL3/SDL.h>
 
 #include "cat3ds_game_files.h"
@@ -70,7 +71,7 @@ static void drawTop(const Cat3DSInstallStatus states[CAT3DS_GAME_COUNT], int sel
         rect(32, y + 2, 256, 23, active ? 1 : 0);
         text8(40, y + 5, cat3dsGameName(i), active ? 15 : 7);
         const Cat3DSInstallStatus &s = states[i];
-        const bool core = playableCat3d(s);
+        const bool core = i == 3 ? cat3dsCanLaunchApocalypse(s) : playableCat3d(s);
         const bool full = s.fileCount && s.validCount == s.fileCount;
         const bool structural = s.resourceGraphicsValid && s.resourceAudioMapsPresent;
         const char *label = !s.directoryFound ? "GAME FOLDER UNAVAILABLE" :
@@ -137,6 +138,14 @@ static void drawBottom(const Cat3DSInstallStatus states[CAT3DS_GAME_COUNT],
             if (!s.resourceShapesPresent)
                 std::printf("Intro SHP: absent (not game blocker)\n");
         }
+        else if (selected == 3)
+        {
+            std::printf(cat3dsCanLaunchApocalypse(s) ? "\nA: START CATACOMB APOCALYPSE\n" :
+                                                       "\nRequires matching v1.01 game files.\n");
+            std::printf("Intro and hint book files optional.\n");
+        }
+        else if (selected == 2)
+            std::printf(cat3dsCanLaunchArmageddon(s) ? "\nA: START CATACOMB ARMAGEDDON\n" : "\nRequires matching v1.02 DOS files.\n");
         else if (selected == 0 && playableCat3d(s))
             std::printf("\nA: START ORIGINAL CATACOMB 3-D\n(ReflectionHLE engine)\n");
         else if (selected == 0)
@@ -176,6 +185,8 @@ extern "C" int cat3dsSelectGame(void)
         return -1;
     }
     SDL_SetTextureScaleMode(texture, SDL_SCALEMODE_NEAREST);
+    const devoptab_t *oldOut = devoptab_list[STD_OUT];
+    const devoptab_t *oldErr = devoptab_list[STD_ERR];
     consoleInit(GFX_BOTTOM, nullptr);
 
     const char *mkdirFailed = nullptr;
@@ -184,6 +195,7 @@ extern "C" int cat3dsSelectGame(void)
     cat3dsScanInstallations(states);
     int selected = 0;
     bool details = false;
+    bool confirmExit = false;
     bool redraw = true;
     int selectionResult = -1;
     u32 previousHeld = 0;
@@ -202,9 +214,22 @@ extern "C" int cat3dsSelectGame(void)
         const u32 held = hidKeysHeld();
         const u32 keys = held & ~previousHeld;
         previousHeld = held;
-        if (quit || (keys & KEY_START))
-            break;
-        if ((keys & KEY_B) && details)
+        if (quit) break;
+        if (confirmExit) {
+            if (keys & KEY_A) break;
+            if (keys & (KEY_B | KEY_START)) {
+                confirmExit = false;
+                redraw = true;
+            } else {
+                SDL_Delay(16);
+                continue;
+            }
+        } else if (keys & KEY_START) {
+            std::printf("\x1b[2J\x1b[HExit Catacomb 3DS?\n\nA: Exit    B: Back\n");
+            confirmExit = true;
+            continue;
+        }
+        else if ((keys & KEY_B) && details)
         {
             details = false;
             redraw = true;
@@ -240,6 +265,16 @@ extern "C" int cat3dsSelectGame(void)
                 selectionResult = 0;
                 break;
             }
+            if (selected == 3 && cat3dsCanLaunchApocalypse(states[3]))
+            {
+                selectionResult = 3;
+                break;
+            }
+            if (selected == 2 && cat3dsCanLaunchArmageddon(states[2]))
+            {
+                selectionResult = 2;
+                break;
+            }
             if (selected == 1 && states[1].resourceGraphicsValid &&
                 states[1].resourceAudioMapsPresent && states[1].resourceLayoutValid)
             {
@@ -260,6 +295,16 @@ extern "C" int cat3dsSelectGame(void)
         SDL_Delay(16);
     }
 
+    while (selectionResult >= 0 && aptMainLoop()) {
+        hidScanInput();
+        if (!hidKeysHeld()) break;
+        SDL_Delay(16);
+    }
+    // The text console points into the selector framebuffer until gfxExit.
+    std::fflush(stdout);
+    std::fflush(stderr);
+    devoptab_list[STD_OUT] = oldOut;
+    devoptab_list[STD_ERR] = oldErr;
     SDL_DestroyTexture(texture);
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);

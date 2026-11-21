@@ -65,6 +65,16 @@ static bool Cat3DS_SlotHeader(FILE *f, bool writing, Cat3DS_SlotLabel &)
            fread(version, 1, sizeof(version), f) == sizeof(version) &&
            !memcmp(version, SAVEVER_DATA, sizeof(version));
 }
+#elif defined(REFKEEN_VER_CATARM) || defined(REFKEEN_VER_CATAPOC)
+static const char *const slotExtension = "sav";
+static bool Cat3DS_SlotHeader(FILE *f, bool writing, Cat3DS_SlotLabel &)
+{
+    static const char signature[] = GAMENAME "\0" SAVEVER_DATA;
+    char input[sizeof(signature)];
+    if (writing) return fwrite(signature, 1, sizeof(signature), f) == sizeof(signature);
+    return fread(input, 1, sizeof(input), f) == sizeof(input) &&
+           !memcmp(input, signature, sizeof(input));
+}
 #else
 #error Missing DOS slot header for this game
 #endif

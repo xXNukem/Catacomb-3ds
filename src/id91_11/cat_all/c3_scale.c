@@ -28,6 +28,10 @@
 #include <stddef.h> // For offsetof
 //#pragma hdrstop
 
+#ifdef __3DS__
+#include "cat3ds_stereo.h"
+#endif
+
 REFKEEN_NS_B
 #ifdef __3DS__
 // Share this const with c3_asm.c inside each C++ game namespace.
@@ -38,9 +42,17 @@ extern const id0_unsigned_t screenbwide;
 #ifdef __3DS__
 /* Defined in Catacomb 3-D's c3_draw.c. Only the native stereo renderer
  * enables per-screen-column sprite clipping; original 2D is untouched. */
-#ifndef REFKEEN_VER_CATADVENTURES
 extern int cat3dsStereoOcclusionEnabled;
-#endif
+extern fixed cat3dsWallDepth[VIEWWIDTH], cat3dsSpriteDepth;
+
+static inline bool Cat3DS_ColumnOccluded(int x, unsigned spriteScale)
+{
+    if (cat3dsStereoOcclusionEnabled)
+        return Cat3DS_SpriteOccluded(cat3dsWallDepth[x], cat3dsSpriteDepth);
+    return zbuffer[x] > (int)spriteScale;
+}
+#else
+#define Cat3DS_ColumnOccluded(x, spriteScale) (zbuffer[x] > (spriteScale))
 #endif
 
 //const	id0_unsigned_t	viewheight = 144;
@@ -701,7 +713,7 @@ void ScaleShape (id0_int_t xcenter, t_compshape id0_seg *compshape, id0_unsigned
 	else
 		rightclip = lastpixel;
 
-	if (zbuffer[rightclip]>scale)
+	if (Cat3DS_ColumnOccluded(rightclip, scale))
 	{
 		if (pixel>0)
 			min = pixel;
@@ -711,7 +723,7 @@ void ScaleShape (id0_int_t xcenter, t_compshape id0_seg *compshape, id0_unsigned
 		{
 			if (--rightclip < min)
 				return;							// totally covered or before 0
-			if (zbuffer[rightclip]<=scale)
+			if (!Cat3DS_ColumnOccluded(rightclip, scale))
 				break;
 		} while (1);
 	}
@@ -762,7 +774,7 @@ void ScaleShape (id0_int_t xcenter, t_compshape id0_seg *compshape, id0_unsigned
 //
 	do
 	{
-		if (zbuffer[pixel] <= scale)
+		if (!Cat3DS_ColumnOccluded(pixel, scale))
 			break;							// start drawing here
 		pixel++;
 		if (!--pixwidth)
@@ -797,7 +809,7 @@ void ScaleShape (id0_int_t xcenter, t_compshape id0_seg *compshape, id0_unsigned
 		id0_unsigned_t egaDestOff = ((id0_unsigned_t)pixel>>3) + bufferofs;
 		id0_byte_t leftMask = bitmasks1[pixel&7][pixwidth-1];
 		id0_byte_t rightMask = bitmasks2[pixel&7][pixwidth-1];
-#if defined(__3DS__) && !defined(REFKEEN_VER_CATADVENTURES)
+#ifdef __3DS__
         if (cat3dsStereoOcclusionEnabled)
         {
             /* The DOS scaler only checks zbuffer at the start and end
@@ -806,7 +818,7 @@ void ScaleShape (id0_int_t xcenter, t_compshape id0_seg *compshape, id0_unsigned
                altering the compiled sprite scaler or drawing over walls. */
             for (int sx = pixel; sx < pixel + pixwidth; ++sx)
             {
-                if (zbuffer[sx] > scale)
+                if (Cat3DS_ColumnOccluded(sx, scale))
                 {
                     const id0_byte_t bit = (id0_byte_t)(0x80u >> (sx & 7));
                     if ((sx >> 3) == (pixel >> 3))

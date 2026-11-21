@@ -29,6 +29,9 @@
 #include "cat3ds_saved_plane.h"
 #endif
 
+#ifdef __3DS__
+#include "cat3ds_menu.h"
+#endif
 REFKEEN_NS_B
 
 /*
@@ -791,11 +794,23 @@ highscores:
 
 		if (IN_IsUserInput())
 		{
-			US_ControlPanel ();
+#ifdef __3DS__
+            extern bool Cat3DS_HandleMenu(bool title, int &returnRow);
+            int returnRow = -1;
+            do {
+                if (!Cat3DS_HandleMenu(true, returnRow)) US_ControlPanel();
+            } while (returnRow >= 0 && !restartgame && !loadedgame);
+            if (cat3dsSessionAction != CatResume) return;
+#else
+            US_ControlPanel();
+#endif
 
 			if (restartgame || loadedgame)
 			{
 				GameLoop ();
+#ifdef __3DS__
+				if (cat3dsSessionAction != CatResume) return;
+#endif
 				goto highscores;
 			}
 		}
@@ -1016,6 +1031,9 @@ void cat3d_exe_main (void)
 //GameLoop ();
 
 	DemoLoop();
+#ifdef __3DS__
+    if (cat3dsSessionAction != CatResume) { ShutdownId(); return; }
+#endif
 	Quit("Demo loop exited???");
 }
 

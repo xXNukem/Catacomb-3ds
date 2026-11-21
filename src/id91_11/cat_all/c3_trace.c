@@ -165,7 +165,7 @@ id0_int_t FollowTrace (fixed tracex, fixed tracey, id0_long_t deltax, id0_long_t
 
 	if (absdx>absdy)
 	{
-		ystep = (deltay<<8)/(absdx>>8);
+		ystep = ((id0_long_t)((id0_longword_t)deltay << 8))/(absdx>>8);
 
 		if (!ystep)
 			ystep = deltay>0 ? 1 : -1;
@@ -241,7 +241,7 @@ id0_int_t FollowTrace (fixed tracex, fixed tracey, id0_long_t deltax, id0_long_t
 	}
 	else
 	{
-		xstep = (deltax<<8)/(absdy>>8);
+		xstep = ((id0_long_t)((id0_longword_t)deltax << 8))/(absdy>>8);
 		if (!xstep)
 			xstep = deltax>0 ? 1 : -1;
 

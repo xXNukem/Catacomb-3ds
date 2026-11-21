@@ -46,10 +46,14 @@
 #include <SDL3/SDL_main.h>
 
 #ifdef __3DS__
+#include "cat3ds_apocalypse.h"
 extern "C" int cat3dsSelectGame(void);
 extern "C" int cat3dsPrepareAbyssCompatibility(void);
 #include <3ds.h>
 #include <unistd.h>
+#include <limits.h>
+#include "cat3ds_session.h"
+#include "cat3ds_dualscreen.h"
 #include "backend/filesystem/be_filesystem_mkdir.h"
 #endif
 
@@ -228,13 +232,12 @@ static bool parse_game_ver(const char *arg, int *gameVer, void (**mainFuncPtr)(v
 }
 #endif // REFKEEN_CONFIG_ENABLE_CMDLINE
 
-int main(int argc, char **argv)
+static int runSession(int argc, char **argv)
 {
 #ifdef __3DS__
     /* 3DS native entry for the ORIGINAL ReflectionHLE executable. The game
      * files stay exactly where the existing Catacomb 3DS launcher put them.
      * SDL3_main initializes the platform before this function is called.
-     * This port only targets the fully verified Catacomb 3-D v1.22 for now.
      */
     (void)argc;
     (void)argv;
@@ -264,6 +267,16 @@ int main(int argc, char **argv)
         (char *)"-cfgdir", (char *)"sdmc:/3ds/catacomb-3ds/config",
         (char *)"-gamever", (char *)"catabyss113:game", NULL
     };
+    static char *armArgs[] = {
+        (char *)"ARMGAME", (char *)"-datadir", (char *)"sdmc:/3ds/catacomb-3ds/saves-arm",
+        (char *)"-cfgdir", (char *)"sdmc:/3ds/catacomb-3ds/config",
+        (char *)"-gamever", (char *)"catarm102:game", NULL
+    };
+    static char *apocArgs[] = {
+        (char *)"APOCGAME", (char *)"-datadir", (char *)CAT3DS_APOC_DATA_PATH,
+        (char *)"-cfgdir", (char *)"sdmc:/3ds/catacomb-3ds/config",
+        (char *)"-gamever", (char *)CAT3DS_APOC_GAMEVER, NULL
+    };
     if (selectedCatacomb == 0)
     {
         if (chdir("sdmc:/3ds/catacomb-3ds/games/cat3d") != 0)
@@ -283,6 +296,16 @@ int main(int argc, char **argv)
         abyssArgs[6] = (edition == 124) ?
             (char *)"catabyss124:game" : (char *)"catabyss113:game";
         argv = abyssArgs;
+    }
+    else if (selectedCatacomb == 2)
+    {
+        if (chdir("sdmc:/3ds/catacomb-3ds/games/catarm") != 0) return 1;
+        argv = armArgs;
+    }
+    else if (selectedCatacomb == 3)
+    {
+        if (chdir(CAT3DS_APOC_GAME_PATH) != 0) return 1;
+        argv = apocArgs;
     }
     else
         return 0;
@@ -432,6 +455,30 @@ int main(int argc, char **argv)
 
 #endif // REFKEEN_CONFIG_ENABLE_CMDLINE
 
-	BE_ST_ShutdownAll();
-	return 0;
+#ifdef __3DS__
+    Cat3DS_DualScreenSetGameplay(0);
+    extern void BEL_ST_AltControlScheme_CleanUp(void);
+    extern void BEL_ST_SaveConfigFiles(void);
+    BEL_ST_AltControlScheme_CleanUp();
+    BEL_ST_SaveConfigFiles();
+#endif
+    BE_ST_ShutdownAll();
+    return 0;
+}
+
+int main(int argc, char **argv)
+{
+#ifdef __3DS__
+    extern unsigned char __cat3ds_data_begin[], __cat3ds_data_end[];
+    extern unsigned char __cat3ds_bss_begin[], __cat3ds_bss_end[];
+    const size_t initializedSize = (uintptr_t)__cat3ds_data_end - (uintptr_t)__cat3ds_data_begin;
+    const size_t zeroSize = (uintptr_t)__cat3ds_bss_end - (uintptr_t)__cat3ds_bss_begin;
+    char initialDirectory[PATH_MAX];
+    if (!getcwd(initialDirectory, sizeof(initialDirectory))) return 1;
+    return Cat3DS_RunSessions(__cat3ds_data_begin, initializedSize, __cat3ds_bss_begin, zeroSize,
+        [&] { return runSession(argc, argv); },
+        [&] { return chdir(initialDirectory) == 0; });
+#else
+    return runSession(argc, argv);
+#endif
 }

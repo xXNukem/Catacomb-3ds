@@ -6,7 +6,7 @@
 #include <string>
 #include <vector>
 #include "cat3ds_slot_info.h"
-#ifdef REFKEEN_VER_CATABYSS
+#ifdef REFKEEN_VER_CATADVENTURES
 #include "def.h"
 #include "gelib.h"
 #else
@@ -23,6 +23,11 @@ id0_word_t refkeen_compat_id_us_printx_offset = 0xa50c;
 #include "cat3ds_slot_header.inc"
 extern BE_FILE_T maphandle;
 extern bool Cat3DS_ReadSavedGame(FILE *, bool, int &);
+#ifdef REFKEEN_VER_CATAPOC
+extern statetype s_player, s_invis_wall_control;
+static statetype &monster = s_invis_wall_control;
+void RefKeen_FillObjStatesWithDOSPointers();
+#else
 statetype s_player, s_wallskel;
 static statetype monster;
 static statetype *lookup(uint_fast32_t n)
@@ -31,11 +36,16 @@ static statetype *lookup(uint_fast32_t n)
     return n == 0x4321 ? &monster : NULL;
 }
 statetype *(*RefKeen_GetObjStatePtrFromDOSPointer)(uint_fast32_t) = lookup;
+#endif
 id0_unsigned_t mapwidth = 4, mapheight = 4;
 id0_byte_t tilemap[MAPSIZE][MAPSIZE];
 id0_unsigned_t actorat[MAPSIZE][MAPSIZE];
 objtype objlist[MAXACTORS], *newobj, *player;
-#ifdef REFKEEN_VER_CATABYSS
+#if defined(REFKEEN_VER_CATARM) || defined(REFKEEN_VER_CATAPOC)
+id0_unsigned_t scolor, gcolor, debug_gnd, debug_sky, sky_lightning[6];
+id0_unsigned_t *skycolor = &scolor, *groundcolor = &gcolor;
+#endif
+#ifdef REFKEEN_VER_CATADVENTURES
 id0_word_t refkeen_compat_c4_play_objoffset = 0x2000;
 id0_short_t FreezeTime;
 id0_int_t screenpage;
@@ -78,16 +88,35 @@ static void run(const char *root)
     mapsegs[2] = items;
     for (int i = 0; i < 16; ++i)
         walls[i] = (i == 5 || i == 6 || i == 9 || i == 10) ? 0 : 1;
+#if defined(REFKEEN_VER_CATARM) || defined(REFKEEN_VER_CATAPOC)
+    walls[3] = INVISIBLEWALL;
+    items[7] = 0xabcd;
+#endif
     InitObjList();
     player->state = &s_player;
+#ifdef REFKEEN_VER_CATAPOC
+    RefKeen_FillObjStatesWithDOSPointers();
+#else
     s_player.compatdospointer = 0x1234;
+#endif
     player->obclass = playerobj;
     player->angle = 90;
     player->tilex = player->tiley = 1;
     player->x = player->y = TILEGLOBAL + TILEGLOBAL / 2;
     GetNewObj(false);
+#ifndef REFKEEN_VER_CATAPOC
     monster.compatdospointer = 0x4321;
+#endif
+#if defined(REFKEEN_VER_CATARM) || defined(REFKEEN_VER_CATAPOC)
+#ifdef REFKEEN_VER_CATAPOC
+    newobj->obclass = solidobj;
+    newobj->temp1 = INVISIBLEWALL;
+#else
+    newobj->obclass = succubusobj;
+#endif
+#else
     newobj->obclass = orcobj;
+#endif
     newobj->state = &monster;
     newobj->tilex = 2;
     newobj->tiley = 1;
@@ -99,11 +128,18 @@ static void run(const char *root)
     FILE *original = tmpfile();
     assert(original && SaveTheGame(original));
     auto bytes = contents(original);
+#ifdef REFKEEN_VER_CATAPOC
+    assert(bytes[0] == 0x9b && bytes[1] == 0xb7 && bytes[2] == 0x9d && bytes[3] == 0xb7);
+#endif
 
     // Independently construct a legacy on-disk header, including DOS padding.
     Cat3DS_SlotLabel display = {};
     strcpy(display.date, "2026-01-02 03:04");
-#ifdef REFKEEN_VER_CATABYSS
+#if defined(REFKEEN_VER_CATARM) || defined(REFKEEN_VER_CATAPOC)
+    {
+        std::vector<unsigned char> legacy(GAMENAME, GAMENAME + sizeof(GAMENAME));
+        legacy.insert(legacy.end(), SAVEVER_DATA, SAVEVER_DATA + sizeof(SAVEVER_DATA));
+#elif defined(REFKEEN_VER_CATABYSS)
     for (const char *name : {"CATACOMB ABYSS  ", "CATACOMB ABYSS 3-D"}) {
         refkeen_compat_gelib_gamename = name;
         refkeen_compat_gelib_gamename_strbufflen = strlen(name)+1;
@@ -182,6 +218,9 @@ static void run(const char *root)
     assert(Cat3DS_ReadSavedGame(f, false, level) && level == 0 && setups == 0);
     rewind(f);
     assert(LoadTheGame(f) && gamestate.bolts == 3 && setups == 1);
+#if defined(REFKEEN_VER_CATARM) || defined(REFKEEN_VER_CATAPOC)
+    assert(tilemap[3][0] == 0 && actorat[3][0] == INVISIBLEWALL && items[7] == 0xabcd);
+#endif
     assert(player->next == objlist+1 && player->next->prev == player && !player->next->next);
     fclose(f);
     auto reject = [&](const unsigned char *p, size_t n) {
@@ -194,16 +233,37 @@ static void run(const char *root)
     };
     for (size_t n = 0; n < bytes.size(); ++n) reject(bytes.data(), n);
     auto corrupt = bytes;
-#ifdef REFKEEN_VER_CATABYSS
+#ifdef REFKEEN_VER_CATAPOC
+    // A known state with an invalid replacement wall must not reach T_InvisWall.
+    corrupt[corrupt.size()-4] = NUMFLOORS;
+    reject(corrupt.data(), corrupt.size());
+    corrupt = bytes;
+    assert(player->state == &s_player && player->next->state == &s_invis_wall_control);
+#endif
+#if defined(REFKEEN_VER_CATARM) || defined(REFKEEN_VER_CATAPOC)
+    corrupt[8] = 250;
+#elif defined(REFKEEN_VER_CATABYSS)
     corrupt[4] = 250; // map number after FreezeTime and difficulty
 #else
     corrupt[2] = 250;
 #endif
     reject(corrupt.data(), corrupt.size());
     corrupt = bytes;
-    corrupt[corrupt.size()-4] = 1; // claims a subsequent actor
+#if defined(REFKEEN_VER_CATARM) || defined(REFKEEN_VER_CATAPOC)
+    corrupt[corrupt.size()-68+24] = 1;
+#else
+    corrupt[corrupt.size()-4] = 1;
+#endif
     reject(corrupt.data(), corrupt.size());
     // Corrupt the first plane length, object type, state, and tile coordinate.
+#if defined(REFKEEN_VER_CATARM) || defined(REFKEEN_VER_CATAPOC)
+    for (size_t pos : {size_t(0), size_t(2), size_t(64), bytes.size()-68+2,
+                       bytes.size()-68+16, bytes.size()-68+30}) {
+        corrupt = bytes;
+        corrupt[pos] = corrupt[pos+1] = 0xff;
+        reject(corrupt.data(), corrupt.size());
+    }
+#else
 #ifdef REFKEEN_VER_CATABYSS
     const size_t stateBytes = 56, objectBytes = 66;
 #else
@@ -215,6 +275,7 @@ static void run(const char *root)
         corrupt[pos] = corrupt[pos+1] = 0xff;
         reject(corrupt.data(), corrupt.size());
     }
+#endif
     corrupt = bytes;
     corrupt.push_back(0xff);
     reject(corrupt.data(), corrupt.size());
@@ -224,7 +285,19 @@ REFKEEN_NS_E
 int main(int argc, char **argv)
 {
     assert(argc == 2);
-#ifdef REFKEEN_VER_CATABYSS
+#if defined(REFKEEN_VER_CATARM) || defined(REFKEEN_VER_CATAPOC)
+    extern void checkArmResources();
+    checkArmResources();
+#ifdef REFKEEN_VER_CATAPOC
+    extern void checkApocalypseControlsAndLayout();
+    checkApocalypseControlsAndLayout();
+    extern void checkApocalypseInstall(const char *);
+    checkApocalypseInstall(argv[1]);
+    catapoc::run(argv[1]);
+#else
+    catarm::run(argv[1]);
+#endif
+#elif defined(REFKEEN_VER_CATABYSS)
     catabyss::run(argv[1]);
 #else
     cat3d::run(argv[1]);

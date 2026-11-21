@@ -121,6 +121,7 @@ void BEL_ST_AudioMixerInit(int freq, int channels)
 {
 	if ((channels != 1) && (channels != 2))
 		BE_ST_ExitWithErrorMsg("BEL_ST_AudioMixerInitSource: Unsupported channels count!");
+	g_stAudioMixer.pendingSamples = 0;
 	g_stAudioMixer.offsetInSound = 0;
 	g_stAudioMixer.samplesPartNum = 0;
 	g_stAudioMixer.numSources = 0;
@@ -138,11 +139,12 @@ void BEL_ST_AudioMixerShutdown(void)
 		BE_ST_FreeMutex(g_stAudioMixer.sources[i].mutex);
 		BEL_ST_AudioMixerFreeSourceBuffers(&g_stAudioMixer.sources[i]);
 	}
+	g_stAudioMixer.numSources = 0;
 }
 
 void BEL_ST_AudioMixerUpdateFromPITRateWord(int_fast32_t rateVal)
 {
-	g_stAudioMixer.samplesPerPartTimesPITRate = rateVal * g_stAudioMixer.freq;
+	g_stAudioMixer.samplesPerPartTimesPITRate = (uint64_t)rateVal * g_stAudioMixer.freq;
 	// Since the following division may lead to truncation,
 	// samplesInCurrentPart can change during playback by +-1
 	// (otherwise music may be a bit faster than intended).

@@ -114,11 +114,15 @@ void BE_ST_InitAudio(void)
 
 void BE_ST_ShutdownAudio(void)
 {
+	if (!g_sdlAudioInitDone)
+		return;
 	g_sdlAudioInitDone = false;
 
 	if (g_sdlAudioSubsystemUp)
 		BEL_ST_ShutdownAudioSubsystem();
 	g_sdlAudioSubsystemUp = false;
 
+	BEL_ST_AudioMixerShutdown();
+	g_sdlEmulatedOPLChipReady = false;
 	BEL_ST_ClearMainThreadAudioResources();
 }

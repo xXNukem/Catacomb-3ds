@@ -44,6 +44,9 @@
 #include "cat3ds_saved_plane.h"
 #endif
 
+#ifdef __3DS__
+#include "cat3ds_menu.h"
+#endif
 REFKEEN_NS_B
 
 // REFKEEN - Use replacement for the CATALOG macro
@@ -1148,6 +1151,9 @@ void abysgame_exe_main (void)
 #endif
 
 	DemoLoop();
+#ifdef __3DS__
+    if (cat3dsSessionAction != CatResume) { ShutdownId(); return; }
+#endif
 	Quit(NULL);
 }
 

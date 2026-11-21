@@ -103,6 +103,7 @@ void BEL_ST_FillJoysticksList(void)
 			}
 		}
 	}
+	SDL_free(joysticks);
 }
 
 void BEL_ST_ConditionallyAddJoystick(SDL_JoystickID dev_id)
@@ -163,4 +164,5 @@ void BEL_ST_FillSensorsList(void)
 		default:
 			break;
 		}
+	SDL_free(sensors);
 }

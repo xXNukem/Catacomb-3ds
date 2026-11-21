@@ -3,6 +3,8 @@
  * Retains original Catacomb 3-D status pixels; no reimplemented HUD logic.
  */
 #include "cat3ds_dualscreen.h"
+#include "cat3ds_layout.h"
+#include "cat3ds_stereo.h"
 #include <3ds.h>
 #include <string.h>
 #include <stdbool.h>
@@ -23,37 +25,59 @@ static uint8_t explored[MAP_MAX * MAP_MAX];
 static uint8_t walls[MAP_MAX * MAP_MAX];
 static int currentLevel = -1, levelWidth, levelHeight;
 static int playerTileX, playerTileY, playerFineX, playerFineY, playerAngle;
+static int adventure;
 static int gameplay, haveFrame, bottomConfigured, topConfigured;
 /* CAT3DS_REAL_STEREO_V1: Two genuinely independent original EGA camera views.
  * Left is captured directly from the original engine's earlier video page;
  * right is the image that ReflectionHLE publishes at the end of its frame. */
 #define STEREO_VIEW_W 264
 #define STEREO_VIEW_H 144
-static uint8_t stereoLeftView[STEREO_VIEW_W * STEREO_VIEW_H];
+/* Both layouts fit in 320 x 120 indexed pixels. */
+static uint8_t stereoLeftView[320 * 120];
+static int stereoLeftPitch;
 static int stereoLeftValid;
 static int stereoGfxEnabled;
 
-/* Fixed 16.16 world units for a HALF interpupillary separation.
- * At max slider each eye moves by ~0.0234 tile. Cameras remain parallel. */
-int Cat3DS_DualScreenStereoOffset(void)
-{
-    if (!gameplay) return 0;
-    const float slider = osGet3DSliderState();
-    if (!(slider > 0.025f)) return 0;
-    const float clamped = slider > 1.0f ? 1.0f : slider;
-    /* CAT3DS_BSTONE_OFFAXIS_V4: moderate baseline with true
-     * off-axis ray projection, not the excessive v3 image shift. */
-    return (int)(clamped * 1536.0f + 0.5f);
-}
-/* CAT3DS_BSTONE_OFFAXIS_V4: Convergence belongs to the render
- * projection. The old memmove of EGA columns was removed entirely. */
+static void resetPerformanceWindow(void);
 static int stereoModalActive;
 static int stereoLevelTransitionPending;
+
+int Cat3DS_DualScreenStereoOffset(void)
+{
+    if (!gameplay || stereoModalActive) return 0;
+    return Cat3DS_EyeOffset(osGet3DSliderState());
+}
 void Cat3DS_DualScreenSetModalOverlay(int active)
 {
+    if (stereoModalActive != !!active) resetPerformanceWindow();
     stereoModalActive = !!active;
     if (!active) stereoLevelTransitionPending = 0;
     if (active) stereoLeftValid = 0;
+}
+static bool menuOwnsScreens;
+void Cat3DS_DualScreenEnterMenu(void)
+{
+    menuOwnsScreens = true;
+    Cat3DS_DualScreenSetModalOverlay(1);
+    gfxSet3D(false);
+    stereoGfxEnabled = 0;
+    gfxSetScreenFormat(GFX_TOP, GSP_RGB565_OES);
+    topConfigured = 1;
+    gfxSetScreenFormat(GFX_BOTTOM, GSP_RGB565_OES);
+    bottomConfigured = 1;
+    u16 stride, columns;
+    void *bottom = gfxGetFramebuffer(GFX_BOTTOM, GFX_LEFT, &stride, &columns);
+    if (bottom && stride == 240 && columns == 320) {
+        memset(bottom, 0, stride * columns * 2);
+        GSPGPU_FlushDataCache(bottom, stride * columns * 2);
+        gfxScreenSwapBuffers(GFX_BOTTOM, false);
+    }
+}
+void Cat3DS_DualScreenLeaveMenu(void)
+{
+    menuOwnsScreens = false;
+    Cat3DS_DualScreenSetModalOverlay(0);
+    if (!gameplay) Cat3DS_DualScreenSetGameplay(0);
 }
 void Cat3DS_DualScreenBeginLevelTransition(void)
 {
@@ -69,17 +93,21 @@ void Cat3DS_DualScreenCaptureLeftEGA(uint16_t egaPage)
     stereoLeftValid = 0;
     /* Original Catacomb 3-D EGA video is already de-planed into byte pixels.
      * The BIOS start-address register uses groups of 8 EGA pixels. */
-    if (!gameplay || g_sdlScreenMode != 0x0D ||
-        g_sdlPixLineWidth < STEREO_VIEW_W ||
+    const int width = adventure ? 320 : STEREO_VIEW_W;
+    const int height = adventure ? 120 : STEREO_VIEW_H;
+    stereoLeftPitch = width;
+    if (!gameplay || stereoModalActive || g_sdlScreenMode != 0x0D ||
+        (g_sdlSplitScreenLine >= 0 && g_sdlSplitScreenLine < height - 1) ||
+        g_sdlPixLineWidth < width ||
         g_sdlPixLineWidth > 640) return;
-    const size_t base = (size_t)egaPage * 8u;
-    const size_t last = base + (STEREO_VIEW_H - 1u) *
-                             (size_t)g_sdlPixLineWidth + STEREO_VIEW_W;
+    const size_t base = (size_t)egaPage * 8u + g_sdlPelPanning;
+    const size_t last = base + (height - 1u) *
+                             (size_t)g_sdlPixLineWidth + width;
     if (last > sizeof(g_sdlVidMem.A000.gfxByByte)) return;
     const uint8_t *src = g_sdlVidMem.A000.gfxByByte + base;
-    for (int y = 0; y < STEREO_VIEW_H; ++y)
-        memcpy(stereoLeftView + (size_t)y * STEREO_VIEW_W,
-               src + (size_t)y * g_sdlPixLineWidth, STEREO_VIEW_W);
+    for (int y = 0; y < height; ++y)
+        memcpy(stereoLeftView + (size_t)y * width,
+               src + (size_t)y * g_sdlPixLineWidth, width);
     stereoLeftValid = 1;
 }
 
@@ -87,14 +115,15 @@ void Cat3DS_DualScreenCaptureLeftEGA(uint16_t egaPage)
 
 static uint16_t topScaleX[400], topScaleY[240];
 static int topScaleReady;
+static Cat3DSLayout layout;
 /* CAT3DS_RGB565_PROFILE_V2: 16-bit native buffers and 3D/video timing. */
 static uint16_t rgb565Palette[256];
 static uint32_t cachedPalette[256];
 static int rgb565Ready;
 static uint64_t perfLastPresent, perfPeakTicks, perfRenderTotal, perfVideoTotal;
-static uint64_t perfTopTotal, perfBottomTotal;
+static uint64_t perfTopTotal, perfBottomTotal, perfWaitTotal;
 static unsigned perfRenderCount, perfVideoCount;
-static unsigned perfRenderMs, perfVideoMs, perfPeakMs, perfTopMs, perfBottomMs;
+static unsigned perfRenderMs, perfVideoMs, perfPeakMs, perfTopMs, perfBottomMs, perfWaitMs;
 static uint64_t perfFrequency;
 
 static uint32_t elapsedAvgMs(uint64_t ticks, unsigned count)
@@ -141,6 +170,7 @@ static int fpsHasSample;
  * only if the running homebrew environment disallows core 2. */
 static int perfInitialized, isNew3DS, workerEnabled, workerStopping;
 static int core1Quota;
+static u32 savedCore1Limit;
 static int workerRunningCore = -1;
 static LightEvent workerStart, workerDone;
 static Thread workerThread;
@@ -160,39 +190,45 @@ static void convertTopPixels(const uint8_t *egaPixels, int pitch,
 {
     /* Only CPU writes. The main thread owns gfxGetFramebuffer,
        GSPGPU_FlushDataCache and gfxScreenSwapBuffers. */
-    for (int x = 0; x < 400; ++x) {
-        uint16_t *col = fb + (size_t)x * stride;
-        const int sampleX = topScaleX[x];
-        for (int y = 0; y < 240; ++y)
-            col[stride - y - 1] = rgb565Palette[egaPixels[(size_t)topScaleY[y] * pitch + sampleX]];
-    }
+    Cat3DS_BlitTop(layout, topScaleX, topScaleY, egaPixels, pitch,
+                   rgb565Palette, fb, stride);
 }
 
-static void updateFps(void)
+static int perfStereo = -1;
+static void resetPerformanceWindow(void)
 {
-    const uint64_t now = SDL_GetTicks();
+    fpsHasSample = fpsFrames = 0;
+    fpsWindowStart = perfLastPresent = perfPeakTicks = 0;
+    perfRenderTotal = perfVideoTotal = perfTopTotal = perfBottomTotal = perfWaitTotal = 0;
+    perfRenderCount = perfVideoCount = 0;
+    perfStereo = -1;
+}
+
+static void updateFps(uint64_t nowTicks)
+{
     if (!perfFrequency) perfFrequency = SDL_GetPerformanceFrequency();
-    const uint64_t nowTicks = SDL_GetPerformanceCounter();
-    if (perfLastPresent && nowTicks > perfLastPresent) {
-        const uint64_t frameTicks = nowTicks - perfLastPresent;
-        if (frameTicks > perfPeakTicks) perfPeakTicks = frameTicks;
+    if (!perfLastPresent) {
+        fpsWindowStart = perfLastPresent = nowTicks;
+        return;
     }
+    const uint64_t frameTicks = nowTicks - perfLastPresent;
+    if (frameTicks > perfPeakTicks) perfPeakTicks = frameTicks;
     perfLastPresent = nowTicks;
-    if (!fpsWindowStart) fpsWindowStart = now;
     ++fpsFrames;
-    const uint64_t elapsed = now - fpsWindowStart;
-    if (elapsed >= 1000) {
-        fpsTimes10 = (unsigned)((uint64_t)fpsFrames * 10000 / elapsed);
+    const uint64_t elapsed = nowTicks - fpsWindowStart;
+    if (perfFrequency && elapsed >= perfFrequency) {
+        fpsTimes10 = (unsigned)((uint64_t)fpsFrames * 10 * perfFrequency / elapsed);
         fpsHasSample = 1;
         perfRenderMs = elapsedAvgMs(perfRenderTotal, perfRenderCount);
         perfVideoMs = elapsedAvgMs(perfVideoTotal, perfVideoCount);
         perfTopMs = elapsedAvgMs(perfTopTotal, perfVideoCount);
         perfBottomMs = elapsedAvgMs(perfBottomTotal, perfVideoCount);
+        perfWaitMs = elapsedAvgMs(perfWaitTotal, perfVideoCount);
         perfPeakMs = perfFrequency ? (unsigned)(perfPeakTicks * 1000u / perfFrequency) : 0;
-        perfRenderTotal = perfVideoTotal = perfTopTotal = perfBottomTotal = 0;
+        perfRenderTotal = perfVideoTotal = perfTopTotal = perfBottomTotal = perfWaitTotal = 0;
         perfRenderCount = perfVideoCount = 0;
         perfPeakTicks = 0;
-        fpsWindowStart = now;
+        fpsWindowStart = nowTicks;
         fpsFrames = 0;
     }
 }
@@ -237,23 +273,25 @@ static void line(int x0, int y0, int x1, int y1, uint8_t col)
 }
 static void drawMap(void)
 {
+    const int width = adventure ? 320 : MAP_W;
+    const int height = adventure ? 120 : MAP_H;
     /* Fixed north-up view, following the player. Each tile is 6x6 pixels. */
-    for (int y = 0; y < MAP_H; ++y)
-        hline(0, y, MAP_W, 0);
+    for (int y = 0; y < height; ++y)
+        hline(0, y, width, 0);
     if (!haveFrame) return;
 
-    const int baseX = playerTileX - MAP_W / (MAP_CELL * 2);
-    const int baseY = playerTileY - MAP_H / (MAP_CELL * 2);
-    for (int sy = 0; sy < MAP_H / MAP_CELL + 1; ++sy) {
+    const int baseX = playerTileX - width / (MAP_CELL * 2);
+    const int baseY = playerTileY - height / (MAP_CELL * 2);
+    for (int sy = 0; sy < height / MAP_CELL + 1; ++sy) {
         int my = baseY + sy;
         if ((unsigned)my >= (unsigned)levelHeight) continue;
-        for (int sx = 0; sx < MAP_W / MAP_CELL + 1; ++sx) {
+        for (int sx = 0; sx < width / MAP_CELL + 1; ++sx) {
             int mx = baseX + sx;
             if ((unsigned)mx >= (unsigned)levelWidth || !explored[mx * MAP_MAX + my])
                 continue;
             int px = sx * MAP_CELL, py = sy * MAP_CELL;
             uint8_t color = walls[mx * MAP_MAX + my] ? 9 : 8;
-            for (int yy = py + 1; yy < py + MAP_CELL - 1 && yy < MAP_H; ++yy)
+            for (int yy = py + 1; yy < py + MAP_CELL - 1 && yy < height; ++yy)
                 hline(px + 1, yy, MAP_CELL - 2, color);
         }
     }
@@ -281,7 +319,7 @@ static void topWorkerMain(void *unused)
         if (__atomic_load_n(&workerStopping, __ATOMIC_ACQUIRE)) break;
         const uint64_t begin = SDL_GetPerformanceCounter();
         if (topJob.stereo) {
-            convertTopPixels(stereoLeftView, STEREO_VIEW_W,
+            convertTopPixels(stereoLeftView, stereoLeftPitch,
                              topJob.framebuffer, topJob.stride);
             convertTopPixels(topJob.egaPixels, topJob.pitch,
                              topJob.rightFramebuffer, topJob.stride);
@@ -295,8 +333,10 @@ static void topWorkerMain(void *unused)
     }
 }
 
-static void stopTopWorker(void)
+void Cat3DS_DualScreenShutdown(void)
 {
+    bottomConfigured = 0;
+    perfInitialized = 0;
     if (!workerEnabled) return;
     __atomic_store_n(&workerStopping, 1, __ATOMIC_RELEASE);
     LightEvent_Signal(&workerStart);
@@ -304,7 +344,9 @@ static void stopTopWorker(void)
     threadFree(workerThread);
     workerThread = NULL;
     workerEnabled = 0;
-    if (core1Quota) APT_SetAppCpuTimeLimit(0);
+    if (core1Quota) APT_SetAppCpuTimeLimit(savedCore1Limit);
+    core1Quota = 0;
+    __atomic_store_n(&workerRunningCore, -1, __ATOMIC_RELEASE);
 }
 
 static void initPerformance(void)
@@ -324,18 +366,21 @@ static void initPerformance(void)
        .3dsx depends on the homebrew loader/kernel permissions. */
     workerThread = threadCreate(topWorkerMain, NULL, 16384, 0x30, 2, false);
     if (workerThread) {
-    } else if (R_SUCCEEDED(APT_SetAppCpuTimeLimit(30))) {
+    } else if (R_SUCCEEDED(APT_GetAppCpuTimeLimit(&savedCore1Limit)) &&
+               R_SUCCEEDED(APT_SetAppCpuTimeLimit(30))) {
         /* System CPU fallback has a strict OS-managed time budget. */
         workerThread = threadCreate(topWorkerMain, NULL, 16384, 0x30, 1, false);
         if (workerThread) {
             core1Quota = 1;
         } else {
-            APT_SetAppCpuTimeLimit(0);
+            APT_SetAppCpuTimeLimit(savedCore1Limit);
         }
     }
     if (!workerThread) return;
     workerEnabled = 1;
-    atexit(stopTopWorker);
+    static int exitHookRegistered;
+    if (!exitHookRegistered)
+        exitHookRegistered = atexit(Cat3DS_DualScreenShutdown) == 0;
 }
 
 static void convertRange(uint16_t *fb, int fbStride,
@@ -350,9 +395,18 @@ static void convertRange(uint16_t *fb, int fbStride,
     }
 }
 
+void Cat3DS_DualScreenStartAdventure(void)
+{
+    adventure = 1;
+    Cat3DS_DualScreenSetGameplay(1);
+    Cat3DS_DualScreenBeginLevelTransition();
+}
+
 void Cat3DS_DualScreenSetGameplay(int enabled)
 {
     if (!enabled) {
+        resetPerformanceWindow();
+        adventure = 0;
         stereoModalActive = 0;
         stereoLevelTransitionPending = 0;
         gfxSet3D(false);
@@ -370,6 +424,7 @@ void Cat3DS_DualScreenSetGameplay(int enabled)
 }
 void Cat3DS_DualScreenBeginLevel(int level, int mapWidth, int mapHeight)
 {
+    resetPerformanceWindow();
     currentLevel = level;
     levelWidth = mapWidth > 0 && mapWidth <= MAP_MAX ? mapWidth : 0;
     levelHeight = mapHeight > 0 && mapHeight <= MAP_MAX ? mapHeight : 0;
@@ -438,17 +493,26 @@ int Cat3DS_DualScreenHasGameplayFrame(void)
  *
  * This changes presentation only, NOT Catacomb's ray tracing, FOV, or
  * game logic. No game data or gameplay state is modified. */
+int Cat3DS_DualScreenHandlesMode(int mode)
+{
+    return Cat3DS_DualScreenHasGameplayFrame() &&
+           (mode == 0x0d || (mode == 0x0e && adventure && stereoModalActive));
+}
+
 static uint16_t *prepareNativeTop(unsigned *stride)
 {
     if (!topConfigured) {
         gfxSetScreenFormat(GFX_TOP, GSP_RGB565_OES);
         topConfigured = 1;
     }
-    if (!topScaleReady) {
-        for (int x = 0; x < 400; ++x)
-            topScaleX[x] = (uint16_t)(x * 264 / 400);
-        for (int y = 0; y < 240; ++y)
-            topScaleY[y] = (uint16_t)(y * 144 / 240);
+    Cat3DSLayout next = Cat3DS_GetLayout(adventure, stereoModalActive, g_sdlScreenMode == 0x0e ? 640 : 320);
+    if (!topScaleReady || layout.sourceWidth != next.sourceWidth ||
+        layout.sourceHeight != next.sourceHeight) {
+        layout = next;
+        for (int x = 0; x < layout.outputWidth; ++x)
+            topScaleX[x] = x * layout.sourceWidth / layout.outputWidth;
+        for (int y = 0; y < layout.outputHeight; ++y)
+            topScaleY[y] = y * layout.sourceHeight / layout.outputHeight;
         topScaleReady = 1;
     }
     u16 width, height;
@@ -461,17 +525,17 @@ static uint16_t *prepareNativeTop(unsigned *stride)
 void Cat3DS_DualScreenPresent(const uint8_t *egaPixels, int pitch,
                               const uint32_t *palette)
 {
-    if (!gameplay || (!haveFrame && !stereoModalActive) ||
+    if (menuOwnsScreens || !gameplay || (!haveFrame && !stereoModalActive) ||
         !egaPixels || pitch < BOT_W || !palette)
         return;
+    if (g_sdlScreenMode == 0x0e && pitch < 640) return;
     initPerformance();
-    updateFps();
-    updateRGB565Palette(palette);
     const uint64_t presentBegin = SDL_GetPerformanceCounter();
+    updateRGB565Palette(palette);
 
     /* Allocate both eye framebuffers using libctru's native stereo mode.
      * Do this on core 0, before dispatching any work to core 2. */
-    const int wantStereo = !stereoModalActive && stereoLeftValid && osGet3DSliderState() > 0.025f;
+    const int wantStereo = !stereoModalActive && stereoLeftValid;
     if (stereoGfxEnabled != wantStereo) {
         gfxSet3D(wantStereo);
         stereoGfxEnabled = wantStereo;
@@ -482,9 +546,18 @@ void Cat3DS_DualScreenPresent(const uint8_t *egaPixels, int pitch,
     if (topFb && wantStereo) {
         u16 rw, rh;
         rightFb = (uint16_t *)gfxGetFramebuffer(GFX_TOP, GFX_RIGHT, &rw, &rh);
-        if (!rightFb || rw != topStride || rh != 400) rightFb = NULL;
+        if (!rightFb || rw != topStride || rh != 400) {
+            gfxSet3D(false);
+            stereoGfxEnabled = 0;
+            rightFb = NULL;
+            topFb = prepareNativeTop(&topStride);
+        }
     }
     const int stereo = rightFb != NULL;
+    if (stereo != perfStereo) {
+        resetPerformanceWindow();
+        perfStereo = stereo;
+    }
     uint64_t directTopElapsed = 0;
     if (topFb) {
         if (workerEnabled) {
@@ -499,7 +572,7 @@ void Cat3DS_DualScreenPresent(const uint8_t *egaPixels, int pitch,
         } else {
             const uint64_t start = SDL_GetPerformanceCounter();
             if (stereo) {
-                convertTopPixels(stereoLeftView, STEREO_VIEW_W, topFb, topStride);
+                convertTopPixels(stereoLeftView, stereoLeftPitch, topFb, topStride);
                 convertTopPixels(egaPixels, pitch, rightFb, topStride);
             } else {
                 convertTopPixels(egaPixels, pitch, topFb, topStride);
@@ -515,28 +588,41 @@ void Cat3DS_DualScreenPresent(const uint8_t *egaPixels, int pitch,
         gfxSetScreenFormat(GFX_BOTTOM, GSP_RGB565_OES);
         bottomConfigured = 1;
     }
-    for (int y = 0; y < 200; ++y)
-        memcpy(bottomIndexed + y * BOT_W, egaPixels + y * pitch, BOT_W);
-    memset(bottomIndexed + 200 * BOT_W, 0, 40 * BOT_W);
-    drawMap();
+    if (adventure && stereoModalActive) {
+        memset(bottomIndexed, 0, sizeof bottomIndexed);
+    } else {
+        /* drawMap replaces the world rectangle. Only the original HUD
+           strip to its right and the full-width rows below it survive. */
+        if (!adventure) {
+            for (int y = 0; y < MAP_H; ++y)
+                memcpy(bottomIndexed + y * BOT_W + MAP_W,
+                       egaPixels + y * pitch + MAP_W, BOT_W - MAP_W);
+        }
+        for (int y = adventure ? 120 : MAP_H; y < 200; ++y)
+            memcpy(bottomIndexed + y * BOT_W, egaPixels + y * pitch, BOT_W);
+        memset(bottomIndexed + 200 * BOT_W, 0, 40 * BOT_W);
+        drawMap();
+    }
+    if (!stereoModalActive) {
+        hline(0, 200, BOT_W, 1);
+        hline(0, 221, BOT_W, 1);
+        char perfLine[40];
+        if (fpsHasSample)
+            snprintf(perfLine, sizeof perfLine, "%s FPS %u.%u R%u V%u", stereo ? "3D" : "2D",
+                     fpsTimes10 / 10, fpsTimes10 % 10, perfRenderMs, perfVideoMs);
+        else
+            snprintf(perfLine, sizeof perfLine, "%s FPS -- R-- V--", stereo ? "3D" : "2D");
+        text8(8, 206, perfLine, 14);
+        const int levelNum = currentLevel >= 0 ? (currentLevel + 1) % 100 : 0;
+        char details[40];
+        snprintf(details, sizeof details, "LV%02d P%u T%u B%u W%u",
+                 levelNum, perfPeakMs, perfTopMs, perfBottomMs, perfWaitMs);
+        if (fpsHasSample) text8(8, 228, details, 7);
+        const int runningCore = __atomic_load_n(&workerRunningCore, __ATOMIC_ACQUIRE);
+        text8(264, 228, runningCore == 2 ? "C2" :
+                       (runningCore == 1 ? "C1" : (isNew3DS ? "BST" : "C0")), 10);
 
-    hline(0, 200, BOT_W, 1);
-    hline(0, 221, BOT_W, 1);
-    char perfLine[40];
-    if (fpsHasSample)
-        snprintf(perfLine, sizeof perfLine, "FPS %u.%u R%u V%u",
-                 fpsTimes10 / 10, fpsTimes10 % 10, perfRenderMs, perfVideoMs);
-    else
-        snprintf(perfLine, sizeof perfLine, "FPS -- R-- V--");
-    text8(8, 206, perfLine, 14);
-    const int levelNum = currentLevel >= 0 ? (currentLevel + 1) % 100 : 0;
-    char details[40];
-    snprintf(details, sizeof details, "LV%02d P%u T%u B%u",
-             levelNum, perfPeakMs, perfTopMs, perfBottomMs);
-    text8(8, 228, details, 7);
-    const int runningCore = __atomic_load_n(&workerRunningCore, __ATOMIC_ACQUIRE);
-    text8(264, 228, runningCore == 2 ? "C2" :
-                   (runningCore == 1 ? "C1" : (isNew3DS ? "BST" : "C0")), 10);
+    }
 
     u16 fw, fh;
     uint16_t *bottomFb = (uint16_t *)gfxGetFramebuffer(GFX_BOTTOM, GFX_LEFT, &fw, &fh);
@@ -547,9 +633,11 @@ void Cat3DS_DualScreenPresent(const uint8_t *egaPixels, int pitch,
 
     /* The EGA source, palette and top framebuffer remain stable until the
      * worker signals completion. Only then may either screen be swapped. */
+    uint64_t waitElapsed = 0;
     if (topFb && workerEnabled) {
         LightEvent_Wait(&workerDone);
         __atomic_thread_fence(__ATOMIC_ACQUIRE);
+        waitElapsed = SDL_GetPerformanceCounter() - bottomDone;
     }
     if (topFb) {
         GSPGPU_FlushDataCache(topFb, (u32)topStride * 400u * 2u);
@@ -562,8 +650,11 @@ void Cat3DS_DualScreenPresent(const uint8_t *egaPixels, int pitch,
         gfxScreenSwapBuffers(GFX_BOTTOM, false);
     }
     const uint64_t presentEnd = SDL_GetPerformanceCounter();
+    if (!topFb || stereoModalActive) return;
     perfTopTotal += topFb ? (workerEnabled ? topJobElapsed : directTopElapsed) : 0;
+    perfWaitTotal += waitElapsed;
     perfBottomTotal += bottomDone - bottomBegin;
     perfVideoTotal += presentEnd - presentBegin;
     ++perfVideoCount;
+    updateFps(presentEnd);
 }

@@ -23,6 +23,11 @@
 #include "gelib.h"
 //#pragma hdrstop
 
+#ifdef __3DS__
+#include "cat3ds_dualscreen.h"
+#include "cat3ds_menu.h"
+#endif
+
 REFKEEN_NS_B
 
 /*
@@ -154,6 +159,9 @@ void CalibrateJoystick(id0_short_t joynum);
 
 void	CenterWindow(id0_word_t w,id0_word_t h)
 {
+#ifdef __3DS__
+	Cat3DS_DualScreenBeginLevelTransition();
+#endif
 	US_DrawWindow(((MAXX / 8) - w) / 2,((MAXY / 8) - h) / 2,w,h);
 }
 
@@ -168,12 +176,25 @@ void	CenterWindow(id0_word_t w,id0_word_t h)
 =====================
 */
 
+#ifdef __3DS__
+#include "cat3ds_game_menu.inc"
+#endif
+
 void CheckKeys (void)
 {
 	extern id0_boolean_t autofire;
 
 	if (screenfaded)			// don't do anything with a faded screen
 		return;
+#ifdef __3DS__
+    int returnRow = -1;
+nativeMenu:
+    if (Cat3DS_HandleMenu(false, returnRow)) {
+        if (returnRow >= 0 && !playstate) goto nativeMenu;
+        return;
+    }
+#endif
+
 
 	if (Keyboard[sc_M]&&Keyboard[sc_I]&&Keyboard[sc_K]&&Keyboard[sc_E])
 	{
@@ -309,14 +330,18 @@ void CheckKeys (void)
 //
 	if (Keyboard[sc_F5])
 	{
+#ifdef __3DS__
+		Cat3DS_DualScreenBeginLevelTransition();
+#endif
 		CalibrateJoystick(0);
 		tics = realtics = 1;
 		IN_ClearKeysDown();
 	}
 
-deadloop:;
 // ESCAPE - quits game
 //
+	#ifndef __3DS__
+deadloop:;
 	if ((Keyboard[sc_Escape]) || (Flags & FL_DEAD))
 	{
 		id0_char_t ch;
@@ -381,10 +406,15 @@ deadloop:;
 			DisplaySMsg("Time Stopped:     ",NULL);
 	}
 
+#endif
 // F1 - DISPLAY HELP
 //
 	if (Keyboard[sc_F1])
 	{
+#ifdef __3DS__
+		Cat3DS_DialogClock modalClock;
+		Cat3DS_DualScreenBeginLevelTransition();
+#endif
 		id0_boolean_t nohelp=false;
 		extern textinfo MainHelpText;
 
@@ -434,6 +464,9 @@ deadloop:;
 //
 	if ((Keyboard[sc_F3]) && (!(Flags & FL_DEAD)))
 	{
+#ifdef __3DS__
+        Cat3DS_DialogClock modalClock;
+#endif
 		PreFullDisplay();
 		GE_SaveGame();
 		PostFullDisplay(true);
@@ -445,6 +478,9 @@ deadloop:;
 //
 	if (Keyboard[sc_F4])
 	{
+#ifdef __3DS__
+        Cat3DS_DialogClock modalClock;
+#endif
 		PreFullDisplay();
 		if (GE_LoadGame())
 		{
@@ -466,14 +502,20 @@ deadloop:;
 		IN_ClearKeysDown();
 	}
 
-	if (Flags & FL_DEAD)
-		goto deadloop;
+#ifdef __3DS__
+    if ((returnRow >= 0 && !playstate) || (Flags & FL_DEAD)) goto nativeMenu;
+#else
+    if (Flags & FL_DEAD) goto deadloop;
+#endif
 
 //
 // F10-? debug keys
 //
 	if (Keyboard[sc_F10])
 	{
+#ifdef __3DS__
+		Cat3DS_DualScreenBeginLevelTransition();
+#endif
 		DebugKeys();
 		// (REFKEEN) Minor difference from vanilla Catacomb
 		if (MousePresent) BE_ST_GetEmuAccuMouseMotion(NULL, NULL);	// Clear accumulated mouse movement
@@ -487,6 +529,9 @@ deadloop:;
 //-------------------------------------------------------------------------
 void PreFullDisplay()
 {
+#ifdef __3DS__
+	Cat3DS_DualScreenBeginLevelTransition();
+#endif
 	VW_FadeOut();
 	VW_SetSplitScreen(200);
 	bufferofs = displayofs = screenloc[0];
@@ -797,6 +842,9 @@ void PlayLoop (void)
 
 	void (*think)(struct objstruct *); // REFKEEN: C++ patch
 
+#ifdef __3DS__
+	Cat3DS_DualScreenBeginLevel(gamestate.mapon, mapwidth, mapheight);
+#endif
 	ingame = true;
 	SD_SetTimeCount(0);
 	playstate = (exittype)0;
@@ -1167,6 +1215,9 @@ nextactor:;
 
 		if (Flags & FL_DEAD)
 		{
+#ifdef __3DS__
+		Cat3DS_DualScreenBeginLevelTransition();
+#endif
 			SD_PlaySound (GAMEOVERSND);
 			DisplaySMsg("DEAD",NULL);
 			DrawHealth();
@@ -1183,6 +1234,9 @@ nextactor:;
 //
 		if (playstate == ex_victorious)
 		{
+#ifdef __3DS__
+		Cat3DS_DualScreenBeginLevelTransition();
+#endif
 			Victory(true);
 			Flags |= FL_DEAD;
 		}
@@ -1209,6 +1263,9 @@ nextactor:;
 	}while (!playstate);
 //	StopMusic ();
 
+#ifdef __3DS__
+	Cat3DS_DualScreenBeginLevelTransition();
+#endif
 	ingame = false;
 	if (bordertime)
 	{

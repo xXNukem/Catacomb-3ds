@@ -16,18 +16,18 @@ static void Cat3DS_Text(int x, int y, const char *s)
 // fresh press, and consume its release before returning to the engine menu.
 static u32 Cat3DS_SlotKey()
 {
-    const u32 mask = KEY_A | KEY_B | KEY_DUP | KEY_DDOWN;
+    const u32 mask = KEY_A | KEY_B | KEY_START | KEY_DUP | KEY_DDOWN;
     bool released = false;
     u32 choice = 0;
     while (aptMainLoop()) {
         BE_ST_ShortSleep();
-        hidScanInput();
+        // BE_ST_ShortSleep has already pumped SDL and scanned HID.
         const u32 held = hidKeysHeld() & mask;
         if (!held) {
             if (choice) break;
             released = true;
         } else if (released && !choice) {
-            choice = held;
+            choice = (held & KEY_START) ? KEY_B : held;
         }
     }
     IN_ClearKeysDown();
@@ -56,12 +56,14 @@ static Cat3DS_SlotStatus Cat3DS_InspectSlot(const char *profile, int slot, Cat3D
     if (!f) return errno == ENOENT ? SlotEmpty : SlotInvalid;
     int level;
     bool valid = Cat3DS_SlotHeader(f, false, label) && Cat3DS_ReadSavedGame(f, false, level);
-#ifdef REFKEEN_VER_CATABYSS
+#if defined(REFKEEN_VER_CATABYSS) || defined(REFKEEN_VER_CATARM) || defined(REFKEEN_VER_CATAPOC)
     if (valid) {
         snprintf(label.title, sizeof(label.title), "Level %02d", level + 1);
         struct stat st;
         Cat3DS_Date(fstat(fileno(f), &st) == 0 ? st.st_mtime : (time_t)-1, label.date);
+#ifdef REFKEEN_VER_CATABYSS
         Cat3DS_ReadSlotInfo(profile, slot, f, label.title, label.date);
+#endif
     }
 #endif
     fclose(f);

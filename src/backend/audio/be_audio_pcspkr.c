@@ -92,6 +92,8 @@ void BEL_ST_SetPCSpeakerMixerSource(BE_ST_AudioMixerSource *src)
 void BEL_ST_SetPCSpeakerSampleRate(int rate)
 {
 	g_be_pcSpeakerSampleFreq = rate;
+	g_sdlPCSpeakerConnected = false;
+	BEL_ST_PCSpeakerSetBeepSample(false);
 }
 
 /*** PC Speaker: Add audio data to the stream ***/

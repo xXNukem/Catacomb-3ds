@@ -29,6 +29,16 @@
 //#pragma hdrstop
 //#include <dir.h>
 
+#ifdef __3DS__
+#include <memory>
+#include <new>
+#include "cat3ds_saved_plane.h"
+#include "cat3ds_dualscreen.h"
+#endif
+
+#ifdef __3DS__
+#include "cat3ds_menu.h"
+#endif
 REFKEEN_NS_B
 
 /*
@@ -240,6 +250,7 @@ static id0_boolean_t SaveObject(BE_FILE_T file, objtype *o)
 static id0_boolean_t LoadObject(BE_FILE_T file, objtype *o)
 {
 	id0_int_t dummy;
+	id0_word_t active, kind, direction;
 	// BACKWARDS COMPATIBILITY
 	id0_longword_t statedosfarptr;
 	// Just tells if "o->next" is zero or not
@@ -261,12 +272,12 @@ static id0_boolean_t LoadObject(BE_FILE_T file, objtype *o)
 	    || (BE_Cross_readInt16LE(file, &isnext) != 2) // next
 	    || (BE_Cross_readInt8LEBuffer(file, &dummy, 2) != 2) // prev
 	    //
-	    || (BE_Cross_read_activetype_FromU16LE(file, &o->active) != 2)
-	    || (BE_Cross_read_classtype_FromU16LE(file, &o->obclass) != 2)
+	    || (BE_Cross_readInt16LE(file, &active) != 2)
+	    || (BE_Cross_readInt16LE(file, &kind) != 2)
 	    || (BE_Cross_readInt8LE(file, &o->flags) != 1)
 	    || (BE_Cross_readInt8LE(file, &dummy) != 1) // Padding due to word alignment in original code
 	    || (BE_Cross_readInt32LE(file, &o->distance) != 4)
-	    || (BE_Cross_read_dirtype_FromU16LE(file, &o->dir) != 2)
+	    || (BE_Cross_readInt16LE(file, &direction) != 2)
 	    || (BE_Cross_readInt16LE(file, &o->angle) != 2)
 	    || (BE_Cross_readInt16LE(file, &o->hitpoints) != 2)
 	    || (BE_Cross_readInt32LE(file, &o->speed) != 4)
@@ -279,7 +290,13 @@ static id0_boolean_t LoadObject(BE_FILE_T file, objtype *o)
 	)
 		return false;
 
-	o->state = RefKeen_GetObjStatePtrFromDOSPointer(statedosfarptr);
+#ifdef __3DS__
+    if (active > always || kind > gshotobj || direction > nodir) return false;
+#endif
+    o->active = (activetype)active;
+    o->obclass = (classtype)kind;
+    o->dir = (dirtype)direction;
+    o->state = RefKeen_GetObjStatePtrFromDOSPointer(statedosfarptr);
 	// HACK: All we need to know is if next was originally NULL or not
 	o->next = isnext ? o : NULL;
 	return true;
@@ -366,7 +383,12 @@ id0_boolean_t	SaveTheGame(BE_FILE_T file)
 {
 	id0_word_t	i,compressed,expanded;
 	objtype	*o;
-	memptr	bigbuffer;
+#ifdef __3DS__
+    std::unique_ptr<id0_word_t[]> storage;
+    id0_word_t *bigbuffer;
+#else
+    memptr bigbuffer;
+#endif
 
 	// save the sky and ground colors
 	// REFKEEN - But not before converting to original 16-bit pointers (reusing i variable)
@@ -393,7 +415,18 @@ id0_boolean_t	SaveTheGame(BE_FILE_T file)
 		return(false);
 
 	expanded = mapwidth * mapheight * 2;
-	MM_GetPtr (&bigbuffer,expanded);
+#ifdef __3DS__
+    /* Worst case RLEW expansion: three words per input word.  Do not
+     * allocate an output buffer smaller than the encoder may write. */
+    if (!mapwidth || !mapheight || mapwidth > MAPSIZE || mapheight > MAPSIZE)
+        return false;
+    storage.reset(new (std::nothrow) id0_word_t[1 + 3 * mapwidth * mapheight]);
+    bigbuffer = storage.get();
+    if (!bigbuffer)
+        return false;
+#else
+    MM_GetPtr (&bigbuffer,expanded);
+#endif
 
 	for (i = 0;i < 3;i+=2)	// Write planes 0 and 2
 	{
@@ -403,12 +436,14 @@ id0_boolean_t	SaveTheGame(BE_FILE_T file)
 		compressed = (id0_unsigned_t)CA_RLEWCompress ((id0_unsigned_t id0_huge *)mapsegs[i]
 			,expanded,((id0_unsigned_t id0_huge *)bigbuffer)+1,RLETAG);
 
-		*(id0_unsigned_t id0_huge *)bigbuffer = compressed;
+        *(id0_unsigned_t id0_huge *)bigbuffer = compressed;
 
 		if (BE_Cross_writeInt16LEBuffer(file, bigbuffer, compressed+2) != (id0_word_t)(compressed+2))
 		//if (!CA_FarWrite(file,(id0_byte_t id0_far *)bigbuffer,compressed+2) )
 		{
-			MM_FreePtr (&bigbuffer);
+#ifndef __3DS__
+            MM_FreePtr (&bigbuffer);
+#endif
 			return(false);
 		}
 	}
@@ -418,11 +453,15 @@ id0_boolean_t	SaveTheGame(BE_FILE_T file)
 		if (!SaveObject(file, o))
 		//if (!CA_FarWrite(file,(void id0_far *)o,sizeof(objtype)))
 		{
-			MM_FreePtr (&bigbuffer);
+#ifndef __3DS__
+            MM_FreePtr (&bigbuffer);
+#endif
 			return(false);
 		}
 
-	MM_FreePtr (&bigbuffer);
+#ifndef __3DS__
+    MM_FreePtr (&bigbuffer);
+#endif
 
 	return(true);
 }
@@ -438,6 +477,14 @@ id0_boolean_t	SaveTheGame(BE_FILE_T file)
 ==================
 */
 
+#ifdef __3DS__
+#include "cat3ds_load_game.inc"
+id0_boolean_t LoadTheGame(BE_FILE_T file)
+{
+    int level;
+    return Cat3DS_ReadSavedGame(file, true, level);
+}
+#else
 id0_boolean_t	LoadTheGame(BE_FILE_T file)
 {
 	id0_unsigned_t	i,x,y;
@@ -556,6 +603,7 @@ id0_boolean_t	LoadTheGame(BE_FILE_T file)
 
 	return(true);
 }
+#endif
 
 //===========================================================================
 
@@ -749,6 +797,9 @@ void Quit (const id0_char_t *error, ...)
 	}
 #endif
 
+#ifdef __3DS__
+	Cat3DS_DualScreenSetGameplay(0);
+#endif
 	ShutdownId ();
 
 	if (error && *error)
@@ -1230,6 +1281,9 @@ void apocgame_exe_main (void)
 #endif
 
 	DemoLoop();
+#ifdef __3DS__
+    if (cat3dsSessionAction != CatResume) { ShutdownId(); return; }
+#endif
 	Quit(NULL);
 }
 

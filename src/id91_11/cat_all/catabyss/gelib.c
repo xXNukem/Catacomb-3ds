@@ -1750,7 +1750,15 @@ id0_char_t GetKeyChoice(const id0_char_t *choices,id0_boolean_t clear)
 		}
 		g_ingame_altcontrol_mapping_keychoice.pbuttons[controllerbutton].mapClass = BE_ST_CTRL_MAP_NONE;
 	}
-	g_ingame_altcontrol_mapping_keychoice.ignoreConfirmCancelSwap =
+#ifdef __3DS__
+    // A acknowledges the media prompt, B aborts. The gate prompt already
+    // maps its first two choices to Y and N.
+    if (choices[0] == sc_Escape && choices[1] == sc_Space && !choices[2]) {
+        g_ingame_altcontrol_mapping_keychoice.pbuttons[BE_ST_CTRL_BUT_B].mapClass = BE_ST_CTRL_MAP_KEYSCANCODE;
+        g_ingame_altcontrol_mapping_keychoice.pbuttons[BE_ST_CTRL_BUT_B].val = sc_Escape;
+    }
+#endif
+    g_ingame_altcontrol_mapping_keychoice.ignoreConfirmCancelSwap =
 	    g_ingame_altcontrol_mapping_keychoice.pbuttons[BE_ST_CTRL_BUT_A].val != sc_Space &&
 	    !(g_ingame_altcontrol_mapping_keychoice.pbuttons[BE_ST_CTRL_BUT_A].val == sc_Y &&
 	      g_ingame_altcontrol_mapping_keychoice.pbuttons[BE_ST_CTRL_BUT_B].val == sc_N);

@@ -2,20 +2,28 @@
 // Included inside each linked engine's namespace, next to its DOS readers.
 extern bool Cat3DS_MapDimensions(int level, unsigned &width, unsigned &height);
 extern statetype s_player;
-#ifdef REFKEEN_VER_CATABYSS
+#if defined(REFKEEN_VER_CATABYSS) || defined(REFKEEN_VER_CATARM)
 extern statetype s_wallskel;
+#elif defined(REFKEEN_VER_CATAPOC)
+extern statetype s_invis_wall_control;
 #endif
 
 bool Cat3DS_ReadSavedGame(FILE *file, bool apply, int &level)
 {
     gametype state = {};
-#ifdef REFKEEN_VER_CATABYSS
+#if defined(REFKEEN_VER_CATARM) || defined(REFKEEN_VER_CATAPOC)
+    id0_word_t sky, ground;
+    if (BE_Cross_readInt16LE(file, &sky) != 2 || !GetSkyGndColorPtrFromDOSPointer(sky) ||
+        BE_Cross_readInt16LE(file, &ground) != 2 || !GetSkyGndColorPtrFromDOSPointer(ground))
+        return false;
+#endif
+#ifdef REFKEEN_VER_CATADVENTURES
     id0_short_t freeze;
     id0_boolean_t easy;
     if (BE_Cross_readInt16LE(file, &freeze) != 2) return false;
 #endif
     if (!LoadGameState(file, &state)) return false;
-#ifdef REFKEEN_VER_CATABYSS
+#ifdef REFKEEN_VER_CATADVENTURES
     if (BE_Cross_read_boolean_From16LE(file, &easy) != 2) return false;
 #endif
     unsigned width, height;
@@ -57,11 +65,16 @@ bool Cat3DS_ReadSavedGame(FILE *file, bool apply, int &level)
             (actor.obclass == playerobj) != (count == 1) ||
             (actor.state == &s_player) != (count == 1))
             return false;
-#ifdef REFKEEN_VER_CATABYSS
+#if defined(REFKEEN_VER_CATABYSS) || defined(REFKEEN_VER_CATARM)
         // T_WallSkeleton uses the DOS hitpoints and speed fields as tile indices.
         if (actor.state == &s_wallskel &&
             (actor.hitpoints < 0 || unsigned(actor.hitpoints) >= width ||
              actor.speed < 0 || unsigned(actor.speed) >= height))
+            return false;
+#elif defined(REFKEEN_VER_CATAPOC)
+        // T_InvisWall restores this field into the renderer’s wall tile map.
+        if (actor.state == &s_invis_wall_control &&
+            (actor.temp1 < 0 || actor.temp1 >= NUMFLOORS))
             return false;
 #endif
     } while (actors[count - 1].next);
@@ -69,12 +82,16 @@ bool Cat3DS_ReadSavedGame(FILE *file, bool apply, int &level)
 
     level = state.mapon;
     if (!apply) return true;
-#ifdef REFKEEN_VER_CATABYSS
+#ifdef REFKEEN_VER_CATADVENTURES
     screenpage = 0;
     FreeUpMemory();
     FreezeTime = freeze;
     EASYMODEON = easy;
     playstate = ex_loadedgame;
+#endif
+#if defined(REFKEEN_VER_CATARM) || defined(REFKEEN_VER_CATAPOC)
+    skycolor = GetSkyGndColorPtrFromDOSPointer(sky);
+    groundcolor = GetSkyGndColorPtrFromDOSPointer(ground);
 #endif
     gamestate = state;
     SetupGameLevel();
@@ -86,7 +103,10 @@ bool Cat3DS_ReadSavedGame(FILE *file, bool apply, int &level)
         for (unsigned x = 0; x < width; ++x) {
             unsigned tile = planes[0][y * width + x];
             if (tile < NUMFLOORS) {
-                tilemap[x][y] = tile;
+#if defined(REFKEEN_VER_CATARM) || defined(REFKEEN_VER_CATAPOC)
+                if (tile != INVISIBLEWALL)
+#endif
+                    tilemap[x][y] = tile;
                 actorat[x][y] = tile;
             }
         }

@@ -948,15 +948,34 @@ void RefKeen_PrepareAltControllerScheme(void)
 	CheckNonKeyMappings(BE_ST_CTRL_BIND_CAT3D_DEBUGKEYS, &g_ingame_but_debug_keys_map);
 #ifdef __3DS__
 	/* Physical 3DS pad: D-pad duplicates Circle Pad, L also holds strafe,
-	 * START opens the original game control panel, SELECT pauses.
+	 * START opens the shared menu, SELECT pauses.
 	 * Use the game's existing action bindings, never synthetic key events. */
 	g_ingame_altcontrol_mapping_gameplay.pbuttons[BE_ST_CTRL_BUT_DPAD_UP] = g_ingame_but_up_map;
 	g_ingame_altcontrol_mapping_gameplay.pbuttons[BE_ST_CTRL_BUT_DPAD_DOWN] = g_ingame_but_down_map;
 	g_ingame_altcontrol_mapping_gameplay.pbuttons[BE_ST_CTRL_BUT_DPAD_LEFT] = g_ingame_but_left_map;
 	g_ingame_altcontrol_mapping_gameplay.pbuttons[BE_ST_CTRL_BUT_DPAD_RIGHT] = g_ingame_but_right_map;
 	g_ingame_altcontrol_mapping_gameplay.pbuttons[BE_ST_CTRL_BUT_LSHOULDER] = g_ingame_but_strafe_map;
-	g_ingame_altcontrol_mapping_gameplay.pbuttons[BE_ST_CTRL_BUT_START] = (BE_ST_ControllerSingleMap){BUT_BACK_MAP};
-	g_ingame_altcontrol_mapping_gameplay.pbuttons[BE_ST_CTRL_BUT_BACK] = (BE_ST_ControllerSingleMap){BUT_PAUSE_MAP};
+	#if defined(REFKEEN_VER_CATARM) || defined(REFKEEN_VER_CATAPOC)
+	CheckPadMapping(BE_ST_CTRL_EXTRA_BUT_RTRIGGER, &g_ingame_but_func_keys_map);
+#endif
+#ifdef REFKEEN_VER_CAT3D
+    g_ingame_altcontrol_mapping_menu.pbuttons[BE_ST_CTRL_BUT_START] = (BE_ST_ControllerSingleMap){BUT_BACK_MAP};
+#endif
+    // The shortcut layers are latched. START and SELECT must keep their
+    // gameplay meaning even before the player selects a shortcut.
+    BE_ST_ControllerMapping *layers[] = {
+        &g_ingame_altcontrol_mapping_gameplay,
+#if defined(REFKEEN_VER_CAT3D) || defined(REFKEEN_VER_CATABYSS)
+        &g_ingame_altcontrol_mapping_scrolls,
+#endif
+#ifdef REFKEEN_VER_CATADVENTURES
+        &g_ingame_altcontrol_mapping_funckeys,
+#endif
+    };
+    for (unsigned i = 0; i < sizeof(layers)/sizeof(layers[0]); ++i) {
+        layers[i]->pbuttons[BE_ST_CTRL_BUT_START] = (BE_ST_ControllerSingleMap){BUT_BACK_MAP};
+        layers[i]->pbuttons[BE_ST_CTRL_BUT_BACK] = (BE_ST_ControllerSingleMap){BUT_PAUSE_MAP};
+    }
 #endif
 
 	// HACK (leave US_LineInput this way)

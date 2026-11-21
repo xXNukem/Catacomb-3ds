@@ -32,6 +32,13 @@
 // REFKEEN - Unused
 //#include "sl_file.h"
 
+#if defined(__3DS__) && (defined(REFKEEN_VER_CATARM) || defined(REFKEEN_VER_CATAPOC))
+#include <3ds.h>
+#include "backend/filesystem/be_filesystem_gameinst.h"
+#include "cat3ds_slot_files.h"
+#include "cat3ds_slot_info.h"
+#endif
+
 REFKEEN_NS_B
 
 #define MAX_GAMELIST_NAMES 20
@@ -308,8 +315,17 @@ id0_long_t VerifyRewritable(const id0_char_t *filename)
 //
 ///////////////////////////////////////////////////////////////////////////
 
+#if defined(__3DS__) && (defined(REFKEEN_VER_CATARM) || defined(REFKEEN_VER_CATAPOC))
+#include "cat3ds_slot_menu.inc"
+#endif
 void GE_SaveGame()
 {
+#if defined(__3DS__) && (defined(REFKEEN_VER_CATARM) || defined(REFKEEN_VER_CATAPOC))
+	VW_FixRefreshBuffer();
+	Cat3DS_RunSlots(true);
+	if (!screenfaded) VW_FadeOut();
+	return;
+#endif
 	id0_boolean_t GettingFilename=true;
 //	id0_char_t Filename[FILENAME_LEN+1]; //, ID[sizeof(GAMENAME)], VER[sizeof(SAVEVER_DATA)];
 	BE_FILE_T handle;
@@ -467,6 +483,12 @@ EXIT_FUNC:;
 
 id0_boolean_t GE_LoadGame()
 {
+#if defined(__3DS__) && (defined(REFKEEN_VER_CATARM) || defined(REFKEEN_VER_CATAPOC))
+	VW_FixRefreshBuffer();
+	bool loaded = Cat3DS_RunSlots(false);
+	if (!screenfaded) VW_FadeOut();
+	return loaded;
+#endif
 	id0_boolean_t GettingFilename=true,rt_code=false;
 	BE_FILE_T handle;
 
@@ -1233,7 +1255,15 @@ id0_char_t GetKeyChoice(const id0_char_t *choices,id0_boolean_t clear)
 		}
 		g_ingame_altcontrol_mapping_keychoice.pbuttons[controllerbutton].mapClass = BE_ST_CTRL_MAP_NONE;
 	}
-	g_ingame_altcontrol_mapping_keychoice.ignoreConfirmCancelSwap =
+#ifdef __3DS__
+    // A acknowledges the media prompt, B aborts. The gate prompt already
+    // maps its first two choices to Y and N.
+    if (choices[0] == sc_Escape && choices[1] == sc_Space && !choices[2]) {
+        g_ingame_altcontrol_mapping_keychoice.pbuttons[BE_ST_CTRL_BUT_B].mapClass = BE_ST_CTRL_MAP_KEYSCANCODE;
+        g_ingame_altcontrol_mapping_keychoice.pbuttons[BE_ST_CTRL_BUT_B].val = sc_Escape;
+    }
+#endif
+    g_ingame_altcontrol_mapping_keychoice.ignoreConfirmCancelSwap =
 	    g_ingame_altcontrol_mapping_keychoice.pbuttons[BE_ST_CTRL_BUT_A].val != sc_Space &&
 	    !(g_ingame_altcontrol_mapping_keychoice.pbuttons[BE_ST_CTRL_BUT_A].val == sc_Y &&
 	      g_ingame_altcontrol_mapping_keychoice.pbuttons[BE_ST_CTRL_BUT_B].val == sc_N);

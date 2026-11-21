@@ -22,6 +22,13 @@
 #include "def.h"
 //#pragma hdrstop
 
+#ifdef __3DS__
+#include "cat3ds_dualscreen.h"
+#include "cat3ds_stereo.h"
+#define CAT3DS_ADVENTURE_CAMERA 1
+#include <SDL3/SDL_timer.h>
+#endif
+
 REFKEEN_NS_B
 
 //#define DRAWEACH				// draw walls one at a time for debugging
@@ -1200,6 +1207,14 @@ void TransformPoint (fixed gx, fixed gy, id0_int_t *screenx, id0_unsigned_t *scr
 //
 // transform actor
 //
+#ifdef CAT3DS_ADVENTURE_CAMERA
+int cat3dsStereoOcclusionEnabled;
+fixed cat3dsWallDepth[VIEWWIDTH], cat3dsSpriteDepth;
+static bool centerActorsOnly, privateEyeActors;
+static double eyeLensShift;
+static objtype eyeActors[MAXACTORS];
+#endif
+
 void TransformActor (objtype *ob)
 {
   id0_int_t ratio;
@@ -1236,7 +1251,7 @@ void TransformActor (objtype *ob)
   if (ratio<=MINRATIO)
 	ratio = MINRATIO;
 
-  ob->viewx = CENTERX + ny/ratio;
+    ob->viewx = CENTERX + ny/ratio;
 
   ob->viewheight = TILEGLOBAL/ratio;
 }
@@ -1584,12 +1599,24 @@ void DrawScaleds (void)
 
 	for (obj = player->next;obj;obj=obj->next)
 	{
+#ifdef CAT3DS_ADVENTURE_CAMERA
+        /* The eye may activate or hide a sprite only in its private copy.
+           Its next pointer continues traversal of the original list. */
+        if (privateEyeActors) {
+            eyeActors[numvisable] = *obj;
+            obj = &eyeActors[numvisable];
+        }
+#endif
 		// (REFKEEN) WORKAROUND FOR VANILLA BUG (TODO EMULATE BEHAVIORS?):
 		// obj->tiley may be very large (say 65534), seems to be reproduced
 		// as a right-shift of obj->y with signed value of -95792 by 16 bits.
 		//
 		// Workaround itself: Add a few conditions.
-		tilespot = &tilemap[0][0]+(obj->tilex<<6)+obj->tiley;
+#ifdef __3DS__
+        if (Cat3DS_ActorVisible(tilemap[0], spotvis[0], MAPSIZE, mapwidth, mapheight,
+                                obj->tilex, obj->tiley))
+#else
+        tilespot = &tilemap[0][0]+(obj->tilex<<6)+obj->tiley;
 		visspot = &spotvis[0][0]+(obj->tilex<<6)+obj->tiley;
 		//
 		// could be in any of the nine surrounding tiles
@@ -1604,6 +1631,7 @@ void DrawScaleds (void)
 		|| ( *(visspot+65) && !*(tilespot+65) )
 		|| ( *(visspot+64) && !*(tilespot+64) )
 		|| ( *(visspot+63) && !*(tilespot+63) ) ))
+#endif
 		{
 			if ((obj->active == noalways) || (obj->active == always))
 				obj->active = always;
@@ -1616,7 +1644,13 @@ void DrawScaleds (void)
 			if (!obj->state->shapenum)
 				continue;
 
-			*vislist++ = obj;
+#ifdef CAT3DS_ADVENTURE_CAMERA
+            if (centerActorsOnly) {
+                obj->viewheight = 32000; /* final DOS sort marker */
+                continue;
+            }
+#endif
+            *vislist++ = obj;
 			numvisable++;
 		}
 		else
@@ -1646,8 +1680,20 @@ void DrawScaleds (void)
 		// draw farthest
 		//
 		shape = shapedirectory[farthest->state->shapenum-FIRSTSCALEPIC];
-		ScaleShape(farthest->viewx,(t_compshape *)shape,farthest->viewheight);
-		farthest->viewheight = 32000;
+#ifdef CAT3DS_ADVENTURE_CAMERA
+        {
+            const fixed gx = farthest->x - viewx, gy = farthest->y - viewy;
+            cat3dsSpriteDepth = FixedByFrac(gx, viewcos) - FixedByFrac(gy, viewsin);
+            const fixed side = FixedByFrac(gx, viewsin) + FixedByFrac(gy, viewcos);
+            const double ratio = fmax(MINRATIO, (double)cat3dsSpriteDepth * scale / FOCALLENGTH);
+            const int x = (int)(CENTERX + 0.5 + eyeLensShift + side / ratio);
+            if (x >= -VIEWWIDTH && x < VIEWWIDTH * 2)
+                ScaleShape(x, (t_compshape *)shape, farthest->viewheight);
+        }
+#else
+        ScaleShape(farthest->viewx,(t_compshape *)shape,farthest->viewheight);
+#endif
+        farthest->viewheight = 32000;
 	}
 }
 
@@ -1768,9 +1814,16 @@ void	DrawHand (void)
 ========================
 */
 
+#ifdef CAT3DS_ADVENTURE_CAMERA
+#include "cat3ds_adventure_eye.inc"
+#endif
+
 void	ThreeDRefresh (void)
 {
 	id0_int_t tracedir;
+#ifdef __3DS__
+    const uint64_t renderStart = SDL_GetPerformanceCounter();
+#endif
 
 restart:
 	aborttrace = false;
@@ -1877,8 +1930,13 @@ asm	rep stosw
 	asm	out	dx,al
 #endif
 
-	DrawWallList();
-	DrawScaleds();
+#ifdef CAT3DS_ADVENTURE_CAMERA
+    const int sliderOffset = (!fizzlein && playstate != ex_warped) ? Cat3DS_DualScreenStereoOffset() : 0;
+    Cat3DS_DrawAdventureViews(sliderOffset);
+#else
+    DrawWallList();
+    DrawScaleds();
+#endif
 
 	EGAWRITEMODE(0);
 	EGABITMASK(0xff);
@@ -1892,6 +1950,9 @@ asm	rep stosw
 //
 // show screen and time last cycle
 //
+#ifdef __3DS__
+    Cat3DS_DualScreenReportRenderTicks(SDL_GetPerformanceCounter() - renderStart);
+#endif
 	if (fizzlein)
 	{
 		fizzlein = false;
@@ -1905,6 +1966,15 @@ asm	rep stosw
 		//if (MousePresent) Mouse(MDelta);	// Clear accumulated mouse movement
 	}
 
+#ifdef __3DS__
+    static_assert(VIEWX == 0 && VIEWY == 0 && VIEWWIDTH == 320 && VIEWHEIGHT == 120 && MAPSIZE == 64,
+                  "Abyss native presentation geometry");
+    if (playstate == ex_warped)
+        Cat3DS_DualScreenBeginLevelTransition();
+    else
+        Cat3DS_DualScreenObserve(gamestate.mapon, mapwidth, mapheight,
+                                 tilemap[0], spotvis[0], player->x, player->y, player->angle);
+#endif
 	BE_ST_SetScreenStartAddress(bufferofs);
 #if 0
 asm	cli

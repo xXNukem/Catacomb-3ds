@@ -30,6 +30,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <SDL3/SDL.h>
+#ifdef __3DS__
+#include "cat3ds_pad.h"
+#endif
 
 #include "../events/be_events_sdl.h"
 #include "../input/be_input.h"
@@ -56,6 +59,10 @@ void BEL_ST_FillSensorsList(void);
 void BEL_ST_ParseConfigFiles(void);
 void BEL_ST_SaveConfigFiles(void);
 
+
+#ifdef __3DS__
+#include "cat3ds_bindings.h"
+#endif
 
 void BE_ST_InitCommon(void)
 {
@@ -84,17 +91,10 @@ void BE_ST_InitCommon(void)
 	/* Catacomb 3DS: physical controls, independent of legacy desktop cfg.
 	 * All changes are compile-time 3DS-only; ReflectionHLE remains original. */
 	g_refKeenCfg.altControlScheme = true;
+	g_refKeenCfg.swapConfirmCancel = false;
 	g_refKeenCfg.touchInputToggle = TOUCHINPUT_OFF;
 	g_refKeenCfg.isBilinear = false; /* EGA pixels; avoid extra filtering */
-	g_refKeenCfg.cat3d.useLeftStick = true;
-	g_refKeenCfg.cat3d.analogMotion = false;
-	g_refKeenCfg.cat3d.binds[BE_ST_CTRL_BIND_CAT3D_FIRE].pad = BE_ST_CTRL_BUT_A;
-	g_refKeenCfg.cat3d.binds[BE_ST_CTRL_BIND_CAT3D_STRAFE].pad = BE_ST_CTRL_BUT_B;
-	g_refKeenCfg.cat3d.binds[BE_ST_CTRL_BIND_CAT3D_DRINK].pad = BE_ST_CTRL_BUT_X;
-	g_refKeenCfg.cat3d.binds[BE_ST_CTRL_BIND_CAT3D_BOLT].pad = BE_ST_CTRL_BUT_Y;
-	g_refKeenCfg.cat3d.binds[BE_ST_CTRL_BIND_CAT3D_NUKE].pad = BE_ST_CTRL_EXTRA_BUT_LTRIGGER;
-	g_refKeenCfg.cat3d.binds[BE_ST_CTRL_BIND_CAT3D_FASTTURN].pad = BE_ST_CTRL_BUT_RSHOULDER;
-	g_refKeenCfg.cat3d.binds[BE_ST_CTRL_BIND_CAT3D_SCROLLS].pad = BE_ST_CTRL_EXTRA_BUT_RTRIGGER;
+	Cat3DS_ConfigureBindings(g_refKeenCfg);
 #endif
 	// SDL_AddGamepadMappingsFromFile exists, but we try
 	// opening the file from a specific path like other files.
@@ -110,6 +110,10 @@ void BE_ST_InitCommon(void)
 		free(buffer);
 		fclose(fp);
 	}
+
+#ifdef __3DS__
+	SDL_AddGamepadMapping(CAT3DS_SDL_MAPPING);
+#endif
 
 	// HACK - If game is *not* started from launcher, TOUCHINPUT_AUTO has
 	// the same initial behaviors as TOUCHINPUT_OFF here (i.e., not showing touch UI).
@@ -184,8 +188,15 @@ void BE_ST_InitSensors(void)
 		BEL_ST_FillSensorsList();
 }
 
+#ifdef __3DS__
+#include "cat3ds_dualscreen.h"
+#endif
+
 void BE_ST_ShutdownAll(void)
 {
+#ifdef __3DS__
+	Cat3DS_DualScreenShutdown();
+#endif
 	BEL_ST_SetMouseMode(BE_ST_MOUSEMODE_ABS_WITH_CURSOR);
 	BE_ST_ShutdownAudio();
 	BE_ST_ShutdownGfx();
