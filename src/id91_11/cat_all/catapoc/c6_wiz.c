@@ -2834,7 +2834,8 @@ void Thrust (id0_int_t angle, id0_unsigned_t speed)
 #ifdef __3DS__
     auto wall = [](int x, int y) {
         if (x < 0 || y < 0 || x >= mapwidth || y >= mapheight) return true;
-        const auto tile = actorat[x][y];
+        // Match the visible wall map; interactive specials keep DOS handling.
+        const auto tile = tilemap[x][y];
         return tile && tile <= LASTTILE && (TILE_FLAGS(tile) & tf_SOLID) && !(TILE_FLAGS(tile) & tf_SPECIAL);
     };
     xmove = Cat3DS_WallStep(player->x,player->y,xmove,wall);

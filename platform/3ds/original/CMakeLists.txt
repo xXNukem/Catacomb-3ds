@@ -120,8 +120,8 @@ target_link_libraries(cat3ds-original PRIVATE SDL3::SDL3 m ctru)
 
 # The 3DS toolchain provides these functions (also used by SDL3 examples).
 ctr_generate_smdh(cat3ds-original.smdh
-  NAME "Catacomb 3DS Original"
-  DESCRIPTION "Original ReflectionHLE game engine"
+  NAME "The Catacomb 3DS"
+  DESCRIPTION "Four classic Catacomb games on New 3DS"
   AUTHOR "xXNukem"
   ICON "${CMAKE_CURRENT_LIST_DIR}/icon.png")
 ctr_create_3dsx(cat3ds-original SMDH cat3ds-original.smdh)

@@ -49,3 +49,6 @@
 /platform/3ds/patches/
 /platform/3ds/tools/install_*.py
 /platform/3ds/tools/revert_*.py
+
+# Local backups from 3DS fixes (retain locally; never publish)
+/.cat3ds-*-backup/

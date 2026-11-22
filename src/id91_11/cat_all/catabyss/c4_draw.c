@@ -25,6 +25,7 @@
 #ifdef __3DS__
 #include "cat3ds_dualscreen.h"
 #include "cat3ds_stereo.h"
+#include "cat3ds_native_wall_scaler.h"
 #define CAT3DS_ADVENTURE_CAMERA 1
 #include <SDL3/SDL_timer.h>
 #endif
@@ -1862,8 +1863,14 @@ asm	rep stosw
 	viewsin = sintable[viewangle];
 	viewcos = costable[viewangle];
 #ifdef CAT3DS_ADVENTURE_CAMERA
-    viewx = player->x;
-    viewy = player->y;
+    /* CAT3DS_VIEW_CLEARANCE_V1: avoid pressing the camera into a front wall.
+     * Physical player collision, doors and pickups stay untouched. */
+    const fixed cameraRetreat = Cat3DS_ViewClearanceRetreat(
+        tilemap[0], MAPSIZE, mapwidth, mapheight, player->x, player->y,
+        (double)FixedByFrac(GLOBAL1, viewcos) / TILEGLOBAL,
+        -(double)FixedByFrac(GLOBAL1, viewsin) / TILEGLOBAL);
+    viewx = player->x - FixedByFrac(cameraRetreat, viewcos);
+    viewy = player->y + FixedByFrac(cameraRetreat, viewsin);
 #else
 	viewx = player->x - FixedByFrac(FOCALLENGTH,viewcos);
 	viewy = player->y + FixedByFrac(FOCALLENGTH,viewsin);

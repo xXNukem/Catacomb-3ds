@@ -193,4 +193,36 @@ static inline Cat3DSWallHit Cat3DS_TraceColumn(const uint8_t *tiles, uint8_t *vi
     }
     return result;
 }
+
+/* CAT3DS_VIEW_CLEARANCE_V1
+ * The DOS raycaster's focal point was one tile behind the player. The 3DS
+ * DDA camera instead started at the player's feet, magnifying the wall as
+ * the player approached it. Retreat ONLY when a wall is too close in the
+ * viewing direction, and never retreat through a wall behind the player.
+ * Result in 16.16 tile units. Gameplay/player coordinates are unchanged.
+ */
+static inline int32_t Cat3DS_ViewClearanceRetreat(
+    const uint8_t *tiles, int stride, int width, int height,
+    int32_t playerX, int32_t playerY, double forwardX, double forwardY)
+{
+    const double px = (double)playerX / 65536.0;
+    const double py = (double)playerY / 65536.0;
+    const int cx = (int)floor(px), cy = (int)floor(py);
+    if (cx < 0 || cy < 0 || cx >= width || cy >= height ||
+        tiles[cx * stride + cy]) return 0;
+
+    const Cat3DSWallHit ahead = Cat3DS_TraceColumn(tiles, 0, stride, width,
+        height, px, py, forwardX, forwardY, 0.0);
+    /* At this depth the 3DS wall projection fits below the original
+     * maximum scaler size, rather than appearing enormously magnified. */
+    const double desiredDepth = 1.125;
+    if (!ahead.tile || ahead.depth >= desiredDepth) return 0;
+
+    const Cat3DSWallHit behind = Cat3DS_TraceColumn(tiles, 0, stride, width,
+        height, px, py, -forwardX, -forwardY, 0.0);
+    const double roomBehind = behind.tile ? fmax(0.0, behind.depth - 0.0625) : 1.0;
+    const double retreat = fmax(0.0, fmin(1.0,
+        fmin(desiredDepth - ahead.depth, roomBehind)));
+    return (int32_t)(retreat * 65536.0);
+}
 #endif

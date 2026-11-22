@@ -23,6 +23,7 @@
 #ifdef __3DS__
 #include "cat3ds_dualscreen.h"
 #include "cat3ds_stereo.h"
+#include "cat3ds_native_wall_scaler.h"
 #include <SDL3/SDL_timer.h>
 #endif
 //#pragma hdrstop
@@ -111,6 +112,7 @@ fixed scale;
  * image is shifted; the original integer 2D path remains unchanged. */
 static double cat3dsStereoProjectionShift;
 static uint64_t renderStart;
+static fixed cat3dsViewClearanceRetreat; // CAT3DS_VIEW_CLEARANCE_V1
 /* Both 2D and 3D gameplay use this projection so activating the physical
  * slider never changes the world FOV. Use the original focal length in tile units. */
 #define CAT3DS_STEREO_FOV_SCALE (GLOBAL1 / VIEWWIDTH)
@@ -119,6 +121,7 @@ static uint64_t renderStart;
  * raycaster. Keep this off for the untouched original 2D renderer. */
 int cat3dsStereoOcclusionEnabled;
 fixed cat3dsWallDepth[VIEWWIDTH], cat3dsSpriteDepth;
+extern id0_word_t cat3dsFullWallScale[VIEWWIDTH];
 
 #endif
 
@@ -1707,7 +1710,12 @@ static void Cat3DS_DrawStereoColumns(void)
             continue;
         const int column = hit.column;
         const double ratio = hit.depth * (double)scale;
-        const int height = (int)fmax(1, fmin(MAXSCALE, TILEGLOBAL / (2.0 * ratio)));
+        /* CAT3DS_NEAR_WALL_SCALER_V2: keep the true projected height
+         * for rasterisation; clamp only legacy wallheight/zbuffer indices. */
+        const int fullHeight = (int)fmin(CAT3DS_NEAR_WALL_SCALE_LIMIT,
+                                     fmax(1.0, TILEGLOBAL / (2.0 * ratio)));
+        const int height = fullHeight > MAXSCALE ? MAXSCALE : fullHeight;
+        cat3dsFullWallScale[x] = (id0_word_t)fullHeight;
         wallheight[x] = (id0_unsigned_t)height;
         zbuffer[x] = (id0_int_t)height;
         wallwidth[x] = 1;
@@ -1759,8 +1767,11 @@ asm	rep stosw
 	viewsin = sintable[viewangle];
 	viewcos = costable[viewangle];
 #ifdef __3DS__
-    viewx = player->x + FixedByFrac(eyeOffset, viewsin);
-    viewy = player->y + FixedByFrac(eyeOffset, viewcos);
+    /* CAT3DS_VIEW_CLEARANCE_V1: retreat the optical eye, not the player. */
+    viewx = player->x - FixedByFrac(cat3dsViewClearanceRetreat, viewcos)
+                       + FixedByFrac(eyeOffset, viewsin);
+    viewy = player->y + FixedByFrac(cat3dsViewClearanceRetreat, viewsin)
+                       + FixedByFrac(eyeOffset, viewcos);
 #else
     viewx = player->x - FixedByFrac(FOCALLENGTH,viewcos);
     viewy = player->y + FixedByFrac(FOCALLENGTH,viewsin);
@@ -1955,13 +1966,21 @@ void ThreeDRefresh(void)
     const fixed savedScale = scale;
     /* Use the same horizontal optics with slider off/on. */
     scale = CAT3DS_STEREO_FOV_SCALE;
+    /* CAT3DS_VIEW_CLEARANCE_V1: calculate the safe center once per frame;
+     * both eyes share it. No world FOV or stereo lens settings are changed. */
+    const fixed perpX = sintable[player->angle];
+    const fixed perpY = costable[player->angle];
+    cat3dsViewClearanceRetreat = Cat3DS_ViewClearanceRetreat(
+        tilemap[0], MAPSIZE, mapwidth, mapheight, player->x, player->y,
+        (double)FixedByFrac(GLOBAL1, perpY) / TILEGLOBAL,
+        -(double)FixedByFrac(GLOBAL1, perpX) / TILEGLOBAL);
+    const fixed centerCameraX = player->x - FixedByFrac(cat3dsViewClearanceRetreat, perpY);
+    const fixed centerCameraY = player->y + FixedByFrac(cat3dsViewClearanceRetreat, perpX);
     int offset = fizzlein ? 0 : Cat3DS_DualScreenStereoOffset();
     if (offset > 0) {
-        const fixed perpX = sintable[player->angle];
-        const fixed perpY = costable[player->angle];
         offset = Cat3DS_Baseline(offset, VIEWWIDTH, (double)FOCALLENGTH / scale);
         offset = Cat3DS_LimitCornerOffset(offset, tilemap[0], MAPSIZE, mapwidth, mapheight,
-            (double)player->x / TILEGLOBAL, (double)player->y / TILEGLOBAL,
+            (double)centerCameraX / TILEGLOBAL, (double)centerCameraY / TILEGLOBAL,
             (double)FixedByFrac(GLOBAL1, perpY) / TILEGLOBAL,
             -(double)FixedByFrac(GLOBAL1, perpX) / TILEGLOBAL,
             VIEWWIDTH, (double)FOCALLENGTH / scale);
@@ -1976,8 +1995,8 @@ void ThreeDRefresh(void)
             const fixed dy = FixedByFrac(offset, perpY);
             int safe = 1;
             for (int eye = -1; eye <= 1; eye += 2) {
-                const int px = (player->x + eye * dx) >> TILESHIFT;
-                const int py = (player->y + eye * dy) >> TILESHIFT;
+                const int px = (centerCameraX + eye * dx) >> TILESHIFT;
+                const int py = (centerCameraY + eye * dy) >> TILESHIFT;
                 if (px < 0 || px >= mapwidth || py < 0 || py >= mapheight ||
                     tilemap[px][py]) { safe = 0; break; }
             }

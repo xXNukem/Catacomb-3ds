@@ -6,6 +6,7 @@
 #include <SDL3/SDL.h>
 
 #include "cat3ds_game_files.h"
+#include "cat3ds_logo_data.h"
 
 #include <cstdint>
 #include <cstdio>
@@ -135,7 +136,7 @@ static void drawBottom(const Cat3DSInstallStatus states[CAT3DS_GAME_COUNT],
                        !entry.directoryFound ? "Unavailable - missing folder" :
                        !entry.presentCount ? "Unavailable - copy DOS data" : "Unavailable - check files");
         }
-        page.print(" D-pad: Choose   A: Start\n X: Details      Y: Rescan\n START: Exit");
+        page.print(" Touch a game to start\n D-pad: Choose   A: Start\n X: Details      Y: Rescan\n START: Exit");
     }
     else
     {
@@ -295,17 +296,19 @@ extern "C" int cat3dsSelectGame(Cat3DSInstallStatus *chosen, int initialGame = 0
                 redraw = true;
             }
         }
+        bool touchLaunch = false;
         if (!confirmExit && (keys & KEY_TOUCH) && !details) {
             touchPosition pos;
             hidTouchRead(&pos);
-            if (pos.py >= 24 && pos.py < 152) {
-                selected = (pos.py-24)/32;
+            if (pos.py >= 24 && pos.py < 24 + 32 * CAT3DS_GAME_COUNT) {
+                selected = (pos.py - 24) / 32;
+                touchLaunch = true;
                 redraw = true;
             }
         }
-        if (!confirmExit && (keys & (KEY_A | KEY_X))) {
+        if (!confirmExit && ((keys & (KEY_A | KEY_X)) || touchLaunch)) {
             if (cached) cat3dsScanInstallation(selected, states[selected]);
-            if ((keys & KEY_A) && canLaunch(selected,states[selected])) {
+            if (((keys & KEY_A) || touchLaunch) && canLaunch(selected, states[selected])) {
                 selectionResult = selected;
                 break;
             }
@@ -314,7 +317,8 @@ extern "C" int cat3dsSelectGame(Cat3DSInstallStatus *chosen, int initialGame = 0
         }
         if (redraw)
         {
-            drawTop(confirmExit);
+            if (confirmExit || (logo == nullptr && !Cat3DSLogo::render(pixels, kWidth * kHeight)))
+                drawTop(confirmExit);
             SDL_UpdateTexture(texture, nullptr, pixels, kWidth * sizeof(uint32_t));
             SDL_RenderClear(renderer);
             SDL_RenderTexture(renderer, logo && !confirmExit ? logo : texture, nullptr, nullptr);
@@ -335,8 +339,9 @@ extern "C" int cat3dsSelectGame(Cat3DSInstallStatus *chosen, int initialGame = 0
             break;
         }
         hidScanInput();
-        // Only the launch button must be released before the engine sees HID.
-        if (!(hidKeysHeld() & KEY_A)) break;
+        // Do not pass the launching A press or touch into the game.
+        // Other held inputs, including Circle Pad, must not block startup.
+        if (!(hidKeysHeld() & (KEY_A | KEY_TOUCH))) break;
         SDL_Delay(16);
     }
     SDL_DestroyTexture(logo);

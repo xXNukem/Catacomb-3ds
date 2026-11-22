@@ -2,10 +2,10 @@
 
 <img src="assets/catacomb-3ds-banner.png" alt="Catacomb 3DS" width="100%">
 
-**Catacomb 3-D and Catacomb Abyss on New Nintendo 3DS. Armageddon and Apocalypse are planned.**
+**All four classic Catacomb games, playable on New Nintendo 3DS.**
 
 ![Platform](https://img.shields.io/badge/NEW_NINTENDO-3DS-253a2b?style=for-the-badge&labelColor=102016&color=3fbd6a)
-![Status](https://img.shields.io/badge/STATUS-WORK%20IN%20PROGRESS-151515?style=for-the-badge&labelColor=501119&color=fe4457)
+![Release](https://img.shields.io/badge/BETA-v0.9-151515?style=for-the-badge&labelColor=501119&color=fe4457)
 
 </div>
 
@@ -27,88 +27,99 @@ If you enjoy the port and want to buy me a coffee, you can do it here. Every bit
 
 ## What is Catacomb 3DS?
 
-Catacomb 3DS is an unofficial homebrew project for **New Nintendo 3DS**, based on [ReflectionHLE](https://github.com/ReflectionHLE/ReflectionHLE). It currently brings **Catacomb 3-D** and **Catacomb Abyss** to the console, with **Catacomb Armageddon** and **Catacomb Apocalypse** planned for later.
+**Catacomb 3DS** is an unofficial native port of the four classic Catacomb first-person games to **New Nintendo 3DS**, built on the original game engines preserved by [ReflectionHLE](https://github.com/ReflectionHLE/ReflectionHLE) (formerly Reflection Keen).
 
-The port runs the original game engines with adaptations for the 3DS's controls and two screens. Stereoscopic 3D is also being developed. The aim is to keep the games close to their DOS versions while making them comfortable to play on the console.
+The port adapts the games to the console's two screens, physical controls, touchscreen launcher and homebrew environment. It aims to retain the original gameplay and DOS assets rather than replace the games with approximations.
 
-## Current status
+## Version 0.9 — first public beta
 
-This is an early development version, **not a finished release**.
+**All four games can be launched and played:**
 
-- **Catacomb 3-D:** playable using the original ReflectionHLE engine. The current launcher starts the v1.22 edition.
-- **Catacomb Abyss:** runs through the original engine, with compatibility, saving and menu behaviour still being worked on.
-- **Catacomb Armageddon / Apocalypse:** shown in the game selector, but their engines are not integrated yet.
-- **Stereoscopic 3D:** experimental and still being adjusted.
+| Game | Status |
+|:--|:--|
+| **Catacomb 3-D** | Playable |
+| **Catacomb Abyss** | Playable |
+| **Catacomb Armageddon** | Playable |
+| **Catacomb Apocalypse** | Playable |
 
-The port has a game selector, native 3DS input and a dual-screen presentation. Some menus and save/load behaviour still need work.
+This is a **public beta, not a finished or fully validated release**. All four games are playable with tested DOS installations, but further testing, bug fixes and compatibility updates are needed. In particular, stereoscopic 3D still has visual issues, save/load behavior needs more testing, and some menus, transitions and edge cases may need revision. See [Known issues](#known-issues).
+
+The port targets **New Nintendo 3DS / New Nintendo 3DS XL**. Other members of the 3DS family are not part of the supported hardware target.
 
 ## Installation
 
-### 1. Get the 3DS executable
+### 1. Download the homebrew executable
 
-You need a **New Nintendo 3DS / New Nintendo 3DS XL** capable of running homebrew through the Homebrew Launcher.
+Obtain **`cat3ds-original.3dsx`** from the [GitHub Releases](https://github.com/xXNukem/Catacomb-3ds/releases) page, or [build it from source](#building-from-source).
 
-There is **no packaged public release yet**. For now, build the project using the instructions below. The executable for the original-engine version is **`cat3ds-original.3dsx`**. The older `3ds.3dsx` is an experimental test frontend and is **not** the executable to install for normal gameplay.
-
-Copy `cat3ds-original.3dsx` to:
+Copy it to:
 
 ```text
 sdmc:/3ds/catacomb-3ds/cat3ds-original.3dsx
 ```
 
-### 2. Copy the original DOS game files
+Launch it with the Homebrew Launcher. The launcher creates the required game folders if they do not already exist; it does not erase existing files.
 
-**Game files are not included in this repository.** You need your own original DOS copies of Catacomb 3-D and/or Catacomb Abyss.
+**Use `cat3ds-original.3dsx`**, not the older experimental `3ds.3dsx` frontend.
 
-Run the `.3dsx` once: the launcher creates the game folders automatically. Then copy the original DOS files into the appropriate folders on the SD card, without mixing editions.
+### 2. Supply your own DOS game data
+
+**Original game files are not included in this repository or in the release.** You must provide your own legitimately obtained DOS copies. Copy the files from each installation into its corresponding folder:
 
 ```text
 sdmc:/3ds/catacomb-3ds/
 ├── cat3ds-original.3dsx
 ├── games/
-│   ├── cat3d/
-│   │   ├── CAT3D.EXE
-│   │   ├── AUDIO.C3D
-│   │   ├── EGAGRAPH.C3D
-│   │   └── GAMEMAPS.C3D
-│   ├── catabyss/
-│   │   ├── CATABYSS.EXE    (Abyss v1.13)
-│   │   │   OR ABYSGAME.EXE (Abyss v1.24)
-│   │   ├── AUDIO.ABS
-│   │   ├── EGAGRAPH.ABS
-│   │   ├── GAMEMAPS.ABS
-│   │   └── ...other files from your original DOS copy
-│   ├── catarm/           (not playable yet)
-│   └── catapoc/          (not playable yet)
-├── saves/                (created by the port)
-├── saves-abyss/          (created when Abyss starts)
-└── config/               (created by the port)
+│   ├── cat3d/       # Catacomb 3-D
+│   ├── catabyss/    # Catacomb Abyss
+│   ├── catarm/      # Catacomb Armageddon
+│   └── catapoc/     # Catacomb Apocalypse
+├── saves/
+├── saves-abyss/
+├── saves-arm/
+└── config/
 ```
 
-For **Catacomb 3-D**, use the matching files from **v1.22** for the current playable path. The launcher can recognize v1.00 data, but gameplay with that edition is not yet confirmed.
+Each game's directory should contain the **original gameplay EXE** and matching `AUDIO`, `EGAGRAPH` and `GAMEMAPS` archives. For example:
 
-For **Catacomb Abyss**, the port supports the resource layouts of **v1.13** (`CATABYSS.EXE`) and **v1.24** (`ABYSGAME.EXE`). The four main files above are needed to start the game, but copying the entire original DOS installation is recommended. `SHP01.ABS` through `SHP12.ABS` belong to the separate DOS intro and are not required by the current 3DS gameplay launcher.
+| Folder | Example gameplay EXE | Data-file extension |
+|:--|:--|:--|
+| `cat3d/` | `CAT3D.EXE` | `.C3D` |
+| `catabyss/` | `CATABYSS.EXE` or `ABYSGAME.EXE` | `.ABS` |
+| `catarm/` | `CATARM.EXE` | `.ARM` |
+| `catapoc/` | `CATAPOC.EXE` | `.APC` |
 
-Keep the actual game files **directly inside** `cat3d/` or `catabyss/`, rather than nesting another DOS game directory within them. Do not rename or mix files from different releases.
+The launcher checks file contents and game resource tables, not just filenames. Several DOS editions and compatible executable names are recognized, but **compatibility with additional DOS versions remains to be tested**. In particular, **Catacomb Abyss, Catacomb Armageddon and Catacomb Apocalypse may have problems with editions that have not been verified**. Recognizing a game installation does not guarantee that every level, menu or save/load path works with that edition. Avoid mixing files from different editions in the same folder. Copying the complete original DOS installation is recommended.
 
-### 3. Start the game
+If an installation is not recognized, select it in the launcher and press **X** to inspect the file diagnostics, or **Y** to rescan after copying files.
 
-Open **Catacomb 3DS** from the Homebrew Launcher, select a game and press **A** to start a supported installation. Press **X** for file details. Press **Y** to rescan the folders after copying files.
+### 3. Select a game
 
-If a game is not recognized, check that the files are in the correct folder and belong to a compatible version. The selector checks game-data contents, not just filenames.
+Use the D-pad to highlight a game and press **A** to launch it, or touch an available game in the bottom-screen list to start it directly. The upper screen displays the title artwork; the lower screen shows installation status and controls.
 
 ## Launcher controls
 
-| Button | Action |
+| Input | Action |
 |:--|:--|
-| D-Pad Up / Down | Select a game |
-| A | Start a supported game |
-| X | View file details |
-| B | Back |
-| Y | Rescan game files |
-| START | Exit |
+| D-pad Up / Down | Select a game |
+| A | Launch selected game |
+| Touchscreen | Select and launch an available game with one touch |
+| X | Show installation details |
+| B | Return from details |
+| Y | Rescan the game folders |
+| START | Exit confirmation |
 
-The in-game control scheme is being refined and may change before the first public release.
+In-game controls and the interface are adapted for New Nintendo 3DS; further refinements may follow.
+
+## Known issues
+
+- **More DOS versions need testing:** Full compatibility has not been established for all releases. This is especially relevant to **Abyss, Armageddon and Apocalypse**, where some editions may exhibit problems with startup, gameplay or save/load. Please include the exact DOS version when reporting issues.
+- **Stereoscopic 3D is experimental.** Depth, ghosting, screen transitions and some visual effects require further work. Monoscopic play is the recommended option if 3D causes discomfort or visual artifacts.
+- **Save and load:** The unified save-slot interface is implemented, but saving and restoring progress still need broader testing across all four games and DOS editions. Back up important saves before updating.
+- **Menus and transitions:** Some in-game messages, death screens, transitions or other edge cases may still behave differently from the DOS originals.
+- **Compatibility and stability:** Gameplay sequences, level transitions and game-switching paths have not been exhaustively tested on hardware. Additional bug fixes and reviews are expected.
+
+Please report reproducible problems through [GitHub Issues](https://github.com/xXNukem/Catacomb-3ds/issues), including the game, DOS edition and steps to reproduce the issue.
 
 ## Building from source
 
@@ -116,52 +127,49 @@ Requirements:
 
 - [devkitPro](https://devkitpro.org/) with the Nintendo 3DS toolchain and libctru
 - CMake 3.20 or newer
-- A working build environment for devkitARM
-- Internet access on the first build to fetch the SDL3 source used by the original-engine frontend
+- A working devkitARM installation
+- Internet access for the initial SDL3 source download, if it is not cached
 
 From the repository root:
 
 ```sh
-export DEVKITPRO=/opt/devkitpro   # Change if devkitPro is installed elsewhere
+export DEVKITPRO=/opt/devkitpro   # Adjust if installed elsewhere
+export DEVKITARM="$DEVKITPRO/devkitARM"
 bash platform/3ds/tools/build_original_sdl3.sh
 ```
 
-The script downloads and builds its required SDL3 version if necessary, then builds the ReflectionHLE-based 3DS executable at:
+The primary output is:
 
 ```text
 platform/3ds/cat3ds-original.3dsx
 ```
 
-For local hardware testing with `3dslink`:
+For local wireless testing with the Homebrew Launcher and `3dslink`:
 
 ```sh
 3dslink platform/3ds/cat3ds-original.3dsx
 ```
 
-The separate `platform/3ds/Makefile` builds the older experimental `3ds.3dsx` frontend. It is not the main original-engine build described above.
+The separate `platform/3ds/Makefile` builds the older experimental frontend, not the four-game original-engine executable described here.
 
-## Known limitations
+## Development and use of AI
 
-- Save/load behaviour, particularly in Abyss, still needs verification and fixes.
-- Menus and some modal screens are still being adapted to the 3DS layout.
-- Stereoscopic depth and performance are not final.
-- Armageddon and Apocalypse cannot be launched through the original engines yet.
-- Only the listed game editions and compatible original DOS data have been targeted; other releases are not guaranteed to work.
+AI-assisted tools were used during development to **study and understand the ReflectionHLE / Reflection Keen codebase**, investigate legacy game behavior, and assist with implementing portions of the port.
 
-Please report reproducible problems through [GitHub Issues](https://github.com/xXNukem/Catacomb-3ds/issues), including the game and DOS edition you used.
+**Human work was central to the project:** the developer reviewed AI-generated code, performed hands-on testing on real Nintendo 3DS hardware, diagnosed issues, made design and implementation decisions, and also wrote original code. AI assistance does not replace responsibility for the code included in this repository.
+
+The project is an independent preservation and porting effort, not an official product of the original game developers or Nintendo.
 
 ## Credits
 
 **Nintendo 3DS port:** Carlos de la Barrera Pérez ([xXNukem](https://github.com/xXNukem)).
 
-**Original games:** id Software and the original Catacomb creators and publishers.
+**Original games:** id Software, the original Catacomb developers and publishers.
 
-**Source port foundation:** [ReflectionHLE](https://github.com/ReflectionHLE/ReflectionHLE) and its contributors.
+**Source-port foundation:** [ReflectionHLE](https://github.com/ReflectionHLE/ReflectionHLE) and its contributors. Original copyrights and notices are retained.
 
-This is an independent, unofficial homebrew project, not affiliated with Nintendo or the original games' rights holders.
+## License and original game data
 
-## License and game data
+The project retains the upstream licensing and attribution material. See [README_UPSTREAM.md](README_UPSTREAM.md), [AUTHORS.md](AUTHORS.md), and [LICENSES/](LICENSES/).
 
-The project retains ReflectionHLE's original license and attribution material. See [README_UPSTREAM.md](README_UPSTREAM.md), [AUTHORS.md](AUTHORS.md) and [LICENSES/](LICENSES/).
-
-**Original game data is not distributed here.** You must supply your own game files; their rights remain with their respective owners.
+**No commercial or proprietary DOS game data is distributed with this project.** You must supply your own original game files, which remain the property of their respective rights holders.

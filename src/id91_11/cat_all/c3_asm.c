@@ -39,6 +39,11 @@ REFKEEN_NS_B
  * it is pre bounded to 1-MAXSCALE (the actuial height on screen is 2*height)
  */
 id0_word_t wallheight[VIEWWIDTH];
+#ifdef __3DS__
+/* CAT3DS_NEAR_WALL_SCALER_V2: full half-height, independent of the DOS
+ * bounded wallheight/zbuffer tables; filled only for rendered columns. */
+id0_word_t cat3dsFullWallScale[VIEWWIDTH];
+#endif
 
 /*
  * wallwidth has the pixel width (1-7) of that column
@@ -245,17 +250,29 @@ void ScaleWalls(void)
             colNum += pixwidth;
             continue;
         }
-        const t_compscale *scaler = scaledirectory[scale];
-        if (cat3ds_cached_scalers[scale] != scaler) {
-            Cat3DS_BuildWallRows(&cat3ds_wall_rows[scale],
-                scaler->start, scaler->width, (int)scale * 2, VIEWHEIGHT);
-            cat3ds_cached_scalers[scale] = scaler;
+        /* CAT3DS_NEAR_WALL_SCALER_V2: retain the perspective of near
+         * walls exceeding the original DOS scaler limit. */
+        const unsigned fullScale = cat3dsFullWallScale[colNum]
+                                 ? cat3dsFullWallScale[colNum] : scale;
+        Cat3DS_WallRowMap tallRows;
+        const Cat3DS_WallRowMap *rows;
+        if (fullScale > MAXSCALE) {
+            Cat3DS_BuildTallWallRows(&tallRows, (int)fullScale, VIEWHEIGHT);
+            rows = &tallRows;
+        } else {
+            const t_compscale *scaler = scaledirectory[scale];
+            if (cat3ds_cached_scalers[scale] != scaler) {
+                Cat3DS_BuildWallRows(&cat3ds_wall_rows[scale],
+                    scaler->start, scaler->width, (int)scale * 2, VIEWHEIGHT);
+                cat3ds_cached_scalers[scale] = scaler;
+            }
+            rows = &cat3ds_wall_rows[scale];
         }
         const uint8_t *wallSrcPtr =
             (wallseg[colNum] ? wallseg[colNum] : g_be_cross_dosZeroSeg) + wallofs[colNum];
         const unsigned egaDestOff = screenbyte[colNum] + bufferofs;
         const unsigned masksPair = bitmasks[screenbit[colNum]/2 + pixwidth - 1];
-        Cat3DS_DrawWallRows(&cat3ds_wall_rows[scale],
+        Cat3DS_DrawWallRows(rows,
             ::g_sdlVidMem.A000.egaGfx, egaDestOff, screenbwide,
             wallSrcPtr, (uint8_t)masksPair, (uint8_t)(masksPair >> 8),
             g_be_st_lookup_egaplane_repeat,

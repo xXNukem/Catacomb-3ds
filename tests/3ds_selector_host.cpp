@@ -10,7 +10,8 @@
 
 enum {KEY_X=128,KEY_TOUCH=256,KEY_A=1,KEY_B=2,KEY_START=8,KEY_Y=16,KEY_DUP=32,KEY_DDOWN=64};
 struct touchPosition { unsigned px,py; };
-static void hidTouchRead(touchPosition *p) { p->py=120; }
+static unsigned touchY=120;
+static void hidTouchRead(touchPosition *p) { p->px=80; p->py=touchY; }
 static std::vector<u32> inputs;
 static size_t cursor;
 static u32 down;
@@ -101,9 +102,17 @@ int main()
     prepare(0);
     assert(cat3dsSelectGame(&chosen)==0 && fullScans==before && singleScans==rechecks+1);
     cursor=0;
-    inputs={KEY_TOUCH,0,KEY_X,0,KEY_B,0,KEY_A,0};
+    touchY=120;
+    inputs={KEY_TOUCH,0};
     assert(cat3dsSelectGame(nullptr)==3 && cursor==inputs.size());
+    // Touching outside the list does not launch anything.
+    cursor=0; touchY=8;
+    inputs={KEY_TOUCH,0,KEY_A,0};
+    assert(cat3dsSelectGame(nullptr)==0 && cursor==inputs.size());
     installed=false;
+    cursor=0; touchY=24;
+    inputs={KEY_TOUCH,0,KEY_B,0,KEY_START,0,KEY_A};
+    assert(cat3dsSelectGame(nullptr)==-1 && cursor==inputs.size());
     for (int game=0;game<4;++game) {
         prepare(game);
         inputs.insert(inputs.end(),{KEY_START,0,KEY_A});

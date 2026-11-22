@@ -64,4 +64,26 @@ static inline void Cat3DS_DrawWallRows(const Cat3DS_WallRowMap *rows,
     }
 }
 
+/* CAT3DS_NEAR_WALL_SCALER_V2: Unclipped projection size. The DOS
+ * scaler tables are capped at MAXSCALE, but the centered 3DS camera can
+ * see walls that are considerably taller. Preserve their projected scale
+ * and clip output pixels, rather than squashing the texture to MAXSCALE. */
+#define CAT3DS_NEAR_WALL_SCALE_LIMIT 4096
+static inline void Cat3DS_BuildTallWallRows(Cat3DS_WallRowMap *out,
+                                            int halfHeight, int screenHeight)
+{
+    const int projected = halfHeight * 2;
+    const int top = (screenHeight - projected) / 2;
+    memset(out->source, 255, sizeof out->source);
+    out->first = 0;
+    out->end = (uint8_t)screenHeight;
+    for (int y = 0; y < screenHeight; ++y) {
+        const int fromTop = y - top;
+        if (fromTop < 0 || fromTop >= projected) continue;
+        /* Inverse of original source start = floor(src * projected / 64).
+         * +1/-1 reproduces the half-open intervals precisely. */
+        const int src = ((fromTop + 1) * 64 - 1) / projected;
+        out->source[y] = (uint8_t)(src > 63 ? 63 : src);
+    }
+}
 #endif

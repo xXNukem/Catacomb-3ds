@@ -1,4 +1,6 @@
 /* Included in each adventure namespace after its original sprite and hand routines. */
+/* CAT3DS_NEAR_WALL_SCALER_V2: linked by each game namespace's c3_asm.c. */
+extern id0_word_t cat3dsFullWallScale[VIEWWIDTH];
 static void Cat3DS_DrawAdventureViews(int sliderOffset)
 {
     static id0_byte_t centerVisible[sizeof spotvis];
@@ -53,7 +55,12 @@ static void Cat3DS_DrawAdventureViews(int sliderOffset)
 #endif
             const int index = pic - FIRSTWALLPIC;
             if (index < 0 || index >= NUMSCALEWALLS || !walldirectory[index]) continue;
-            const int height = (int)fmin(MAXSCALE, fmax(1, TILEGLOBAL / (2.0 * hit.depth * scale)));
+            /* CAT3DS_NEAR_WALL_SCALER_V2: don't squeeze oversized
+             * nearby wall textures to the legacy scaler maximum. */
+            const int fullHeight = (int)fmin(CAT3DS_NEAR_WALL_SCALE_LIMIT,
+                                         fmax(1.0, TILEGLOBAL / (2.0 * hit.depth * scale)));
+            const int height = fullHeight > MAXSCALE ? MAXSCALE : fullHeight;
+            cat3dsFullWallScale[x] = (id0_word_t)fullHeight;
             zbuffer[x] = wallheight[x] = height;
             wallwidth[x] = 1;
             wallofs[x] = hit.column * 64;

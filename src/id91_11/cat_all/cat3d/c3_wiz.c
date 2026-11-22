@@ -1973,7 +1973,8 @@ void Thrust (id0_int_t angle, id0_unsigned_t speed)
 #ifdef __3DS__
     auto wall = [](int x, int y) {
         if (x < 0 || y < 0 || x >= mapwidth || y >= mapheight) return true;
-        const auto tile = actorat[x][y];
+        // Match the wall map consumed by the renderer, not the actor overlay.
+        const auto tile = tilemap[x][y];
         return tile && tile <= LASTWALLTILE;
     };
     const auto requestedX = xmove, requestedY = ymove;

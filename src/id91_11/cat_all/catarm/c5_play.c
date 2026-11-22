@@ -939,9 +939,7 @@ void PlayLoop (void)
 	SD_SetTimeCount(0);
 
 	PollControls ();				// center mouse
-#ifdef __3DS__
-	StartMusic ();
-#endif
+	// StartMusic ();
 	do
 	{
 #ifndef PROFILE
@@ -1341,9 +1339,7 @@ nextactor:;
 		//
 
 	}while (!playstate);
-#ifdef __3DS__
-	StopMusic ();
-#endif
+	// StopMusic ();
 
 #ifdef __3DS__
 	Cat3DS_DualScreenBeginLevelTransition();

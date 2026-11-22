@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="384" height="384" viewBox="0 0 48 48" role="img" aria-label="The Catacomb 3DS: gothic dungeon gate, skull and green 3DS title">
+  <title>The Catacomb 3DS — Homebrew Launcher icon</title>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2a1024"/>
+      <stop offset="0.58" stop-color="#120b20"/>
+      <stop offset="1" stop-color="#070b12"/>
+    </linearGradient>
+    <linearGradient id="stone" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#9d83be"/>
+      <stop offset="0.42" stop-color="#66577f"/>
+      <stop offset="1" stop-color="#2d254c"/>
+    </linearGradient>
+    <radialGradient id="portal" cx="50%" cy="59%" r="67%">
+      <stop offset="0" stop-color="#1b802d"/>
+      <stop offset="0.38" stop-color="#0b461e"/>
+      <stop offset="1" stop-color="#041409"/>
+    </radialGradient>
+    <linearGradient id="flame" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0" stop-color="#b6171d"/>
+      <stop offset="0.55" stop-color="#ff4a14"/>
+      <stop offset="1" stop-color="#ffe467"/>
+    </linearGradient>
+    <linearGradient id="plaque" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#4d2746"/>
+      <stop offset="1" stop-color="#201129"/>
+    </linearGradient>
+  </defs>
+  <!-- Keep the silhouette legible on the 48x48 SMDH icon. -->
+  <rect x="0.5" y="0.5" width="47" height="47" rx="5" fill="#07050f" stroke="#1b1126"/>
+  <rect x="2" y="2" width="44" height="44" rx="3.5" fill="url(#bg)" stroke="#8c2341" stroke-width="1.5"/>
+  <path d="M4 9V6Q4 4 6 4H42Q44 4 44 6V9" fill="none" stroke="#e45963" stroke-width="0.9" opacity="0.65"/>
+  <path d="M4 39V42Q4 44 6 44H42Q44 44 44 42V39" fill="none" stroke="#622b64" stroke-width="1"/>
+  <!-- Outer masonry arch. -->
+  <path d="M8 37V22C8 11 14 4 24 4C34 4 40 11 40 22V37L36 41H12Z" fill="url(#stone)" stroke="#100d1d" stroke-width="2"/>
+  <path d="M11.5 38V22C11.5 12.4 16.5 7.5 24 7.5C31.5 7.5 36.5 12.4 36.5 22V38" fill="none" stroke="#c6a4cf" stroke-width="1.2" opacity="0.8"/>
+  <path d="M14.2 38V21C14.2 13.5 18 10.3 24 10.3S33.8 13.5 33.8 21V38" fill="#080d14" stroke="#21182d" stroke-width="2.5"/>
+  <!-- Individual purple stones: seams follow the arch, not a square frame. -->
+  <g fill="none" stroke="#241b39" stroke-width="1.25" opacity="0.95">
+    <path d="M8.5 16L14 18M10 26H14M10 33H14"/>
+    <path d="M40 16L34 18M38 26H34M38 33H34"/>
+    <path d="M14.5 8.7L17.2 13.4M21.4 5L22.1 10M27.4 5L26.5 10M33.5 8.7L30.7 13.4"/>
+  </g>
+  <g fill="#ccabd8" opacity="0.8">
+    <path d="M10 12L12 10L14 11L12 14Z"/>
+    <path d="M34 10L36 12L36 14L33 11Z"/>
+    <rect x="9.2" y="21.7" width="3.8" height="0.8"/>
+    <rect x="35" y="21.7" width="3.8" height="0.8"/>
+  </g>
+  <!-- Luminous portal, frame, and old iron gate. -->
+  <path d="M16.5 37V21.5C16.5 15.4 19.2 12.5 24 12.5C28.8 12.5 31.5 15.4 31.5 21.5V37Z" fill="url(#portal)" stroke="#29c843" stroke-width="1.5"/>
+  <path d="M19 37V22C19 17.8 20.8 15.5 24 15.5C27.2 15.5 29 17.8 29 22V37" fill="none" stroke="#87ff53" stroke-width="0.9" opacity="0.8"/>
+  <g fill="none" stroke="#1b692e" stroke-width="1">
+    <path d="M21 18V36M27 18V36M17 27H31"/>
+  </g>
+  <path d="M24 16V24" stroke="#afff66" stroke-width="1" opacity="0.9"/>
+  <!-- Red torches frame the skull in the original logo. -->
+  <g>
+    <path d="M4.5 22H10V24H4.5ZM38 22H43.5V24H38Z" fill="#523957" stroke="#0c0b15" stroke-width="0.9"/>
+    <path d="M5 20L4.4 16L7.4 11.2L8.5 15L9 18L7 21Z" fill="url(#flame)" stroke="#6d0b20" stroke-width="0.75"/>
+    <path d="M6.5 18.4L6.1 15.9L7.3 13.3L8.1 16.4Z" fill="#fff6a1"/>
+    <path d="M43 20L43.6 16L40.6 11.2L39.5 15L39 18L41 21Z" fill="url(#flame)" stroke="#6d0b20" stroke-width="0.75"/>
+    <path d="M41.5 18.4L41.9 15.9L40.7 13.3L39.9 16.4Z" fill="#fff6a1"/>
+  </g>
+  <!-- Skull rendered as compact pixel-like geometry. -->
+  <path d="M19.3 24L20.3 21.7L22.6 20.4H25.4L27.7 21.7L28.7 24V28L26.8 29.3L26 32H22L21.2 29.3L19.3 28Z" fill="#dfd8b8" stroke="#170e24" stroke-width="1.25" stroke-linejoin="round"/>
+  <path d="M19.7 23.6L22.5 22H25.3L28.3 23.6" fill="none" stroke="#fff3cb" stroke-width="1"/>
+  <path d="M20.6 25H23.2L22.9 27.6H21.1ZM24.8 25H27.4L26.9 27.6H25.1Z" fill="#a40028" stroke="#250a1f" stroke-width="0.6"/>
+  <path d="M24 27.1L23.2 29H24.8Z" fill="#201020"/>
+  <path d="M22.2 30.1V32H23V30.1M24 30.1V32H24.8V30.1M25.8 30.1V32" fill="none" stroke="#5c4350" stroke-width="0.65"/>
+  <!-- Foreground 3DS plaque. Manual pixel lettering stays sharp at 48 px. -->
+  <path d="M7 36L10 34.5H38L41 36V44L38 45H10L7 44Z" fill="#140f1b" stroke="#08070e" stroke-width="1.5"/>
+  <path d="M9 37L11 36H37L39 37V42L37 43H11L9 42Z" fill="url(#plaque)" stroke="#d04c65" stroke-width="1.05"/>
+  <path d="M11 38H37" stroke="#a887ae" stroke-width="0.5" opacity="0.6"/>
+  <g id="pixel-3ds" fill="#7aff46" stroke="#1c5d19" stroke-width="0.22" shape-rendering="crispEdges">
+    <!-- 3 -->
+    <path d="M15 38H19V39H16V40H19V43H15V42H18V41H16V40H15Z"/>
+    <!-- D -->
+    <path d="M21 38H24L26 40V41L24 43H21ZM22 39V42H23.7L25 41V40L23.7 39Z" fill-rule="evenodd"/>
+    <!-- S -->
+    <path d="M28 38H33V39H29V40H33V43H28V42H32V41H28Z"/>
+  </g>
+  <path d="M11 44H37" stroke="#56e34c" stroke-width="0.7" opacity="0.85"/>
+</svg>
