@@ -10,6 +10,7 @@ extern "C" {
 #endif
 
 /* Called by the ORIGINAL game loop, never by the former preview raycaster. */
+int Cat3DS_DualScreenPrepareSDL(void);
 void Cat3DS_DualScreenEnterMenu(void);
 void Cat3DS_DualScreenLeaveMenu(void);
 void Cat3DS_DualScreenShutdown(void);

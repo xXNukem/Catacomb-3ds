@@ -117,7 +117,7 @@ static uint16_t topScaleX[400], topScaleY[240];
 static int topScaleReady;
 static Cat3DSLayout layout;
 /* CAT3DS_RGB565_PROFILE_V2: 16-bit native buffers and 3D/video timing. */
-static uint16_t rgb565Palette[256];
+static uint16_t rgb565Palette[256], bottomPalette[256];
 static uint32_t cachedPalette[256];
 static int rgb565Ready;
 static uint64_t perfLastPresent, perfPeakTicks, perfRenderTotal, perfVideoTotal;
@@ -391,7 +391,7 @@ static void convertRange(uint16_t *fb, int fbStride,
     for (int x = xBegin; x < xEnd; ++x) {
         uint16_t *column = fb + (size_t)x * fbStride;
         for (int y = yBegin; y < yEnd; ++y)
-            column[fbStride - y - 1] = rgb565Palette[bottomIndexed[y * BOT_W + x]];
+            column[fbStride - y - 1] = bottomPalette[bottomIndexed[y * BOT_W + x]];
     }
 }
 
@@ -402,6 +402,20 @@ void Cat3DS_DualScreenStartAdventure(void)
     Cat3DS_DualScreenBeginLevelTransition();
 }
 
+/* SDL's window surface is RGBA8888. A native RGB565 allocation cannot
+ * receive its four-byte pixels, including while the menu polls events. */
+int Cat3DS_DualScreenPrepareSDL(void)
+{
+    if (menuOwnsScreens) return 0;
+    if (topConfigured) {
+        gfxSet3D(false);
+        stereoGfxEnabled = 0;
+        stereoLeftValid = 0;
+        gfxSetScreenFormat(GFX_TOP, GSP_RGBA8_OES);
+        topConfigured = 0;
+    }
+    return 1;
+}
 void Cat3DS_DualScreenSetGameplay(int enabled)
 {
     if (!enabled) {
@@ -471,7 +485,7 @@ void Cat3DS_DualScreenObserve(int level, int mapWidth, int mapHeight,
     playerFineY = playerY & 65535;
     playerAngle = angle;
     haveFrame = 1;
-    if (stereoLevelTransitionPending) {
+    if (stereoModalActive) {
         /* Both eye passes have finished: from now on the native presenter
          * may safely resume stereoscopy without an SDL fallback frame. */
         stereoLevelTransitionPending = 0;
@@ -505,12 +519,15 @@ static uint16_t *prepareNativeTop(unsigned *stride)
         gfxSetScreenFormat(GFX_TOP, GSP_RGB565_OES);
         topConfigured = 1;
     }
-    Cat3DSLayout next = Cat3DS_GetLayout(adventure, stereoModalActive, g_sdlScreenMode == 0x0e ? 640 : 320);
+    Cat3DSLayout next = Cat3DS_GetLayout(adventure, stereoLevelTransitionPending || g_sdlScreenMode == 0x0e, g_sdlScreenMode == 0x0e ? 640 : 320);
+    if (adventure && stereoModalActive && !stereoLevelTransitionPending && g_sdlScreenMode == 0x0d)
+        next = (Cat3DSLayout){320, 120, 400, 180};
     if (!topScaleReady || layout.sourceWidth != next.sourceWidth ||
         layout.sourceHeight != next.sourceHeight) {
         layout = next;
         for (int x = 0; x < layout.outputWidth; ++x)
-            topScaleX[x] = x * layout.sourceWidth / layout.outputWidth;
+            topScaleX[x] = (adventure && !stereoModalActive ? (320 - layout.sourceWidth) / 2 : 0) +
+                           x * layout.sourceWidth / layout.outputWidth;
         for (int y = 0; y < layout.outputHeight; ++y)
             topScaleY[y] = y * layout.sourceHeight / layout.outputHeight;
         topScaleReady = 1;
@@ -588,9 +605,13 @@ void Cat3DS_DualScreenPresent(const uint8_t *egaPixels, int pitch,
         gfxSetScreenFormat(GFX_BOTTOM, GSP_RGB565_OES);
         bottomConfigured = 1;
     }
-    if (adventure && stereoModalActive) {
-        memset(bottomIndexed, 0, sizeof bottomIndexed);
+    if (stereoModalActive) {
+        if (!haveFrame) {
+            memset(bottomIndexed, 0, sizeof bottomIndexed);
+            bottomPalette[0] = 0;
+        }
     } else {
+        memcpy(bottomPalette, rgb565Palette, sizeof bottomPalette);
         /* drawMap replaces the world rectangle. Only the original HUD
            strip to its right and the full-width rows below it survive. */
         if (!adventure) {

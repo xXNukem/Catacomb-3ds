@@ -57,14 +57,13 @@ bool cat3dsEnsureGameFolders(const char **failedPath)
 
 bool cat3dsCanLaunchArmageddon(const Cat3DSInstallStatus &s)
 {
-    return s.directoryFound && s.fileCount == int(sizeof(cat3ds_files_catarm102) /
-                                                  sizeof(cat3ds_files_catarm102[0])) &&
-           s.validCount == s.fileCount;
+    return s.directoryFound && s.coreFileCount == 4 &&
+           (s.coreValidCount == 4 || s.compatibleGameTables);
 }
 
 bool cat3dsCanLaunchApocalypse(const Cat3DSInstallStatus &s)
 {
-    return s.directoryFound && s.coreFileCount == 4 && s.coreValidCount == 4;
+    return cat3dsCanLaunchArmageddon(s);
 }
 
 const char *cat3dsGameName(int game)
@@ -212,7 +211,7 @@ static FileResult locateExpectedFile(int game, const Cat3DSRequiredFile *expecte
         if (strlen(name) >= 128)
             continue;
         const bool sameName = sameNameIgnoreCase(name, expected->name);
-        const bool candidateExe = exe && game < 2 && isExeFilename(name);
+        const bool candidateExe = exe && strlen(name) <= 12 && isExeFilename(name);
         if (candidateExe && !foundExeName[0])
             copyFilename(foundExeName, name);
         if (!sameName && !candidateExe)
@@ -384,6 +383,7 @@ static void writeInstallReport(const Cat3DSInstallStatus states[CAT3DS_GAME_COUN
         fprintf(report, "Closest known edition: %s (main files %d/%d)\n",
                 state->versionName ? state->versionName : "none",
                 state->coreValidCount, state->coreFileCount);
+        if (state->detectedEdition) fprintf(report, "Detected release: %s\n", state->detectedEdition);
         fprintf(report, "Found EXE (unverified): %s\n",
                 state->foundExeName[0] ? state->foundExeName : "none");
         fprintf(report, "Matched game EXE: %s\n",
@@ -493,52 +493,95 @@ static void writeInstallReport(const Cat3DSInstallStatus states[CAT3DS_GAME_COUN
     fclose(report);
 }
 
+static bool matchesGameTables(int game, const Cat3DSInstallStatus &files, const Cat3DSResourceProbe &probe)
+{
+    if (game >= 2 && cat3dsEarlierRelease(game, probe) && probe.exeName[0] && strlen(probe.exeName) <= 12) return true;
+    if (game < 2 || files.coreValidCount != 3 || files.matchedExeName[0] ||
+        !probe.embeddedLayoutValid || !probe.exeName[0] || strlen(probe.exeName) > 12) return false;
+    const bool arm = game == 2;
+    return
+        probe.imageSize == (arm ? 198304-0x2000 : 200064-0x2200) &&
+        probe.audioDictCrc == (arm ? 0x8f1d4dd2u : 0x26658498u) &&
+        probe.audioHeadCrc == (arm ? 0x5f863ad2u : 0x76adb051u) &&
+        probe.egaDictCrc == (arm ? 0xab662db8u : 0xb2ed57fdu) &&
+        probe.egaHeadCrc == (arm ? 0x711cbf10u : 0xd7548ed8u) &&
+        probe.mapHeadCrc == (arm ? 0x546f00d1u : 0x90742162u);
+}
+
+void cat3dsScanInstallation(int game, Cat3DSInstallStatus &status)
+{
+    DIR *dir = opendir(kFolders[game]);
+    const int found = dir != NULL;
+    if (dir)
+        closedir(dir);
+
+    Cat3DSInstallStatus best = {};
+    int haveVersion = 0;
+    for (unsigned i = 0; i < cat3ds_gameVersionCount; ++i)
+    {
+        const Cat3DSGameVersion *version = &cat3ds_gameVersions[i];
+        if (version->game != game)
+            continue;
+        Cat3DSInstallStatus candidate = scanVersion(game, version, found);
+        // Prefer the edition with the most matching principal files;
+        // then use other exact file matches as a tie breaker.
+        if (!haveVersion || candidate.coreValidCount > best.coreValidCount ||
+            (candidate.coreValidCount == best.coreValidCount &&
+             (candidate.validCount > best.validCount ||
+              (candidate.validCount == best.validCount &&
+               candidate.presentCount >= best.presentCount))))
+        {
+            best = candidate;
+            haveVersion = 1;
+        }
+    }
+    status = best;
+    if (game > 0 && found)
+    {
+        Cat3DSResourceProbe probe = {};
+        cat3dsProbeResources(game, kFolders[game], &probe);
+        // Only accept a different executable wrapper if all three DOS archives
+        // and all five independently located engine tables match the edition.
+        status.compatibleGameTables = matchesGameTables(game, best, probe);
+        status.resourceGraphicsValid = probe.graphicsValid;
+        status.resourceAudioMapsPresent = probe.audioAndMapsPresent;
+        status.resourceLayoutValid = probe.embeddedLayoutValid;
+        status.resourceShapesPresent = game != 1 || hasAbyssShapes(kFolders[game]);
+        snprintf(status.resourceExeName, sizeof(status.resourceExeName),
+                 "%s", probe.exeName);
+        snprintf(status.resourceIssue, sizeof(status.resourceIssue),
+                 "%s", probe.problem);
+        if (game == 1 && probe.embeddedLayoutValid &&
+            (!cat3dsAbyssEdition(probe) || strlen(probe.exeName) > 12)) {
+            status.resourceLayoutValid = false;
+            snprintf(status.resourceIssue, sizeof status.resourceIssue, "%s",
+                     strlen(probe.exeName) > 12 ? "Gameplay EXE needs a DOS filename" :
+                                                  "Unidentified Abyss graphics edition");
+        }
+        const char *difference = nullptr;
+        if (const auto *release = cat3dsEarlierRelease(game, probe, &difference))
+            status.detectedEdition = release->edition;
+        else if (difference && !status.compatibleGameTables && best.coreValidCount < 4 &&
+                 (game != 1 || !status.resourceLayoutValid))
+            snprintf(status.resourceIssue, sizeof status.resourceIssue,
+                     "%.24s: %s differs from earlier DOS release", probe.exeName, difference);
+        else if (game >= 2 && !status.compatibleGameTables && best.coreValidCount < 4 && probe.embeddedLayoutValid)
+            snprintf(status.resourceIssue, sizeof status.resourceIssue,
+                     "%.16s: unknown set IMG %u GRAPH %08X DICT %08X HEAD %08X",
+                     probe.exeName, probe.imageSize, probe.graphicsCrc, probe.egaDictCrc, probe.egaHeadCrc);
+        if (game >= 2 && probe.embeddedLayoutValid && strlen(probe.exeName) > 12 &&
+            best.coreValidCount < 4)
+            snprintf(status.resourceIssue, sizeof status.resourceIssue,
+                     "%.36s: gameplay EXE exceeds DOS filename limit", probe.exeName);
+        status.resourceImageSize = probe.imageSize;
+        status.resourceHeadOffset = probe.headOffset;
+        status.resourceDictOffset = probe.dictOffset;
+    }
+}
+
 void cat3dsScanInstallations(Cat3DSInstallStatus out[CAT3DS_GAME_COUNT])
 {
     for (int game = 0; game < CAT3DS_GAME_COUNT; ++game)
-    {
-        DIR *dir = opendir(kFolders[game]);
-        const int found = dir != NULL;
-        if (dir)
-            closedir(dir);
-
-        Cat3DSInstallStatus best = {};
-        int haveVersion = 0;
-        for (unsigned i = 0; i < cat3ds_gameVersionCount; ++i)
-        {
-            const Cat3DSGameVersion *version = &cat3ds_gameVersions[i];
-            if (version->game != game)
-                continue;
-            Cat3DSInstallStatus candidate = scanVersion(game, version, found);
-            // Prefer the edition with the most matching principal files;
-            // then use other exact file matches as a tie breaker.
-            if (!haveVersion || candidate.coreValidCount > best.coreValidCount ||
-                (candidate.coreValidCount == best.coreValidCount &&
-                 (candidate.validCount > best.validCount ||
-                  (candidate.validCount == best.validCount &&
-                   candidate.presentCount >= best.presentCount))))
-            {
-                best = candidate;
-                haveVersion = 1;
-            }
-        }
-        out[game] = best;
-        if (game > 0 && found)
-        {
-            Cat3DSResourceProbe probe = {};
-            cat3dsProbeResources(game, kFolders[game], &probe);
-            out[game].resourceGraphicsValid = probe.graphicsValid;
-            out[game].resourceAudioMapsPresent = probe.audioAndMapsPresent;
-            out[game].resourceLayoutValid = probe.embeddedLayoutValid;
-            out[game].resourceShapesPresent = game != 1 || hasAbyssShapes(kFolders[game]);
-            snprintf(out[game].resourceExeName, sizeof(out[game].resourceExeName),
-                     "%s", probe.exeName);
-            snprintf(out[game].resourceIssue, sizeof(out[game].resourceIssue),
-                     "%s", probe.problem);
-            out[game].resourceImageSize = probe.imageSize;
-            out[game].resourceHeadOffset = probe.headOffset;
-            out[game].resourceDictOffset = probe.dictOffset;
-        }
-    }
+        cat3dsScanInstallation(game, out[game]);
     writeInstallReport(out);
 }

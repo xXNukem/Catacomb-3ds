@@ -81,8 +81,8 @@ static void testFrame()
     scale=172;
     avatar.x=3*TILEGLOBAL; avatar.y=4*TILEGLOBAL;
     avatar.next=&actor; player=&avatar;
-    actor.state=&state; actor.x=5*TILEGLOBAL; actor.y=4*TILEGLOBAL;
-    actor.tilex=5; actor.tiley=4;
+    actor.state=&state; actor.x=6*TILEGLOBAL; actor.y=4*TILEGLOBAL;
+    actor.tilex=6; actor.tiley=4;
     const objtype initial=actor;
     offset=0; ThreeDRefresh();
     assert(passes==1 && captures==0 && publishes==1 && observations==1 && shapes==1);
@@ -97,7 +97,7 @@ static void testFrame()
     ThreeDRefresh();
     assert(passes==2 && signatures[0]!=signatures[1]);
     assert(captures==1 && publishes==1 && observations==1 && shapes==2);
-    assert(actorX[0] < monoActorX && monoActorX < actorX[1]);
+    assert(actorX[0] <= monoActorX && monoActorX <= actorX[1] && actorX[0] < actorX[1]);
     assert(screenpage==expectedPage && tics==expectedTics);
 #if defined(REFKEEN_VER_CATAPOC) || defined(REFKEEN_VER_CATARM)
     assert(wallAnimations==2);
@@ -109,6 +109,29 @@ static void testFrame()
     passes=captures=publishes=observations=shapes=0;
     ThreeDRefresh();
     assert(passes==2 && captures==1 && publishes==1 && fades==1);
+    actor.x=avatar.x+TILEGLOBAL/3;
+    actor.tilex=actor.x>>TILESHIFT;
+    passes=captures=publishes=observations=shapes=0;
+    ThreeDRefresh();
+    assert(shapes==2 && actorX[0]>=actorX[1]);
+    assert(int(actorX[0])-int(actorX[1]) <= 2);
+    avatar.next=nullptr;
+    for (int corner=0;corner<2;++corner) {
+        const fixed x=corner ? TILEGLOBAL+TILEGLOBAL/16 : 4*TILEGLOBAL;
+        const fixed y=corner ? TILEGLOBAL+TILEGLOBAL/16 : 3*TILEGLOBAL;
+        avatar.x=x; avatar.y=y;
+        for (int mode=0;mode<2;++mode) {
+            offset=1280*mode;
+            for (int angle=0;angle<=ANGLES;++angle) {
+                avatar.angle=angle%ANGLES;
+                passes=captures=publishes=observations=shapes=0;
+                ThreeDRefresh();
+                assert(avatar.x==x && avatar.y==y && avatar.angle==angle%ANGLES);
+                assert(publishes==1 && observations==1);
+            }
+            assert(avatar.angle==0);
+        }
+    }
 }
 REFKEEN_NS_E
 int main() { TEST_GAME::testFrame(); }

@@ -123,6 +123,9 @@ void StartMusic(void);
 
 void	CenterWindow(id0_word_t w,id0_word_t h)
 {
+#ifdef __3DS__
+	Cat3DS_DualScreenSetModalOverlay(1);
+#endif
 	US_DrawWindow(((MAXX / 8) - w) / 2,((MAXY / 8) - h) / 2,w,h);
 }
 

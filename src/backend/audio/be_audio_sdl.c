@@ -29,6 +29,15 @@
 #include "refkeen_config.h"
 
 #include <SDL3/SDL.h>
+#ifdef __3DS__
+#include <3ds.h>
+#include <stdio.h>
+static struct {
+	unsigned frames, rate, droppedAtStart, callbacks, stops;
+	bool playing;
+	Uint64 maxMixNs;
+} audioStats;
+#endif
 
 #include "be_cross.h"
 #include "be_st.h"
@@ -53,6 +62,9 @@ static void BEL_ST_MixerCallback(void *unused_userdata, SDL_AudioStream *stream,
 {
 	if (additional_amount > 0)
 	{
+#ifdef __3DS__
+		Uint64 start = SDL_GetTicksNS();
+#endif
 		Uint8 *data = SDL_stack_alloc(Uint8, additional_amount);
 		if (data)
 		{
@@ -65,6 +77,14 @@ static void BEL_ST_MixerCallback(void *unused_userdata, SDL_AudioStream *stream,
 #endif
 			SDL_PutAudioStreamData(stream, data, additional_amount);
 			SDL_stack_free(data);
+#ifdef __3DS__
+			Uint64 elapsed = SDL_GetTicksNS() - start;
+			if (elapsed > audioStats.maxMixNs) audioStats.maxMixNs = elapsed;
+			++audioStats.callbacks;
+			bool playing = ndspChnIsPlaying(0);
+			if (audioStats.playing && !playing) ++audioStats.stops;
+			audioStats.playing = playing;
+#endif
 		}
 	}
 }
@@ -154,6 +174,14 @@ bool BEL_ST_InitAudioSubsystem(int *freq, int *channels, int *bufferLen)
 	}
 	BE_Cross_LogMessage(BE_LOG_MSG_NORMAL, "Audio subsystem initialized, audio driver: %s, service rate: ~%fHz\n", SDL_GetCurrentAudioDriver(), (double)devSpec.freq / sampleFrames);
 
+#ifdef __3DS__
+	audioStats.frames = sampleFrames;
+	audioStats.rate = devSpec.freq;
+	audioStats.callbacks = audioStats.stops = 0;
+	audioStats.playing = false;
+	audioStats.maxMixNs = 0;
+	audioStats.droppedAtStart = ndspGetDroppedFrames();
+#endif
 	*freq = spec.freq;
 	*channels = g_sdlAudioChannels = spec.channels;
 	*bufferLen = sampleFrames;
@@ -164,8 +192,21 @@ bool BEL_ST_InitAudioSubsystem(int *freq, int *channels, int *bufferLen)
 void BEL_ST_ShutdownAudioSubsystem(void)
 {
 	SDL_PauseAudioDevice(SDL_GetAudioStreamDevice(g_sdlAudioStream));
+#ifdef __3DS__
+	unsigned dropped = ndspGetDroppedFrames() - audioStats.droppedAtStart;
+#endif
 	SDL_DestroyAudioStream(g_sdlAudioStream);
 	g_sdlAudioStream = NULL;
+#ifdef __3DS__
+	// Stream destruction joins the playback thread. No SD I/O in the mixer.
+	FILE *report = fopen("sdmc:/3ds/catacomb-3ds/audio-l4.log", "a");
+	if (report) {
+		fprintf(report, "%s device_hz=%u frames=%u callbacks=%u max_mix_us=%llu dsp_dropped=%u channel_stops=%u\n",
+		        g_refKeenCfg.lastSelectedGameExe, audioStats.rate, audioStats.frames,
+		        audioStats.callbacks, (unsigned long long)(audioStats.maxMixNs/1000), dropped, audioStats.stops);
+		fclose(report);
+	}
+#endif
 #ifdef REFKEEN_CONFIG_THREADS
 	SDL_DestroyMutex(g_sdlCallbackMutex);
 	g_sdlCallbackMutex = NULL;

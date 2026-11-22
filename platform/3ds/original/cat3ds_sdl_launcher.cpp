@@ -1,9 +1,8 @@
 /* Catacomb 3DS -- four-game launcher for the ORIGINAL ReflectionHLE engine.
- * The layout and lettering are transferred from platform/3ds/source/main.cpp.
  * This file does NOT render any game scenes; it only selects an installation.
  */
 #include <3ds.h>
-#include <sys/iosupport.h>
+#include <cstdarg>
 #include <SDL3/SDL.h>
 
 #include "cat3ds_game_files.h"
@@ -15,8 +14,8 @@
 extern const uint8_t g_cga_8x8TextFont[256 * 8 * 8];
 
 namespace {
-constexpr int kWidth = 320;
-constexpr int kHeight = 200;
+constexpr int kWidth = 400;
+constexpr int kHeight = 240;
 static uint32_t pixels[kWidth * kHeight];
 /* IBM EGA 16-color approximation, no SDL color mixing. */
 static const uint32_t kEga[16] = {
@@ -35,89 +34,123 @@ static void rect(int x, int y, int w, int h, uint8_t color)
             pixels[j * kWidth + i] = kEga[color & 15];
 }
 
-static void text8(int x, int y, const char *text, uint8_t color)
-{
-    for (; text && *text && x <= 312; ++text, x += 8)
-    {
-        unsigned char ch = static_cast<unsigned char>(*text);
-        for (int py = 0; py < 8; ++py)
-            for (int px = 0; px < 8; ++px)
-                if (g_cga_8x8TextFont[ch * 64 + py * 8 + px] &&
-                    x + px < kWidth && y + py < kHeight)
-                    pixels[(y + py) * kWidth + x + px] = kEga[color & 15];
-    }
-}
-
 static bool playableCat3d(const Cat3DSInstallStatus &s)
 {
     return s.coreFileCount == 4 && s.coreValidCount == 4;
 }
 
-/* Exact layout of the existing libctru selector, now drawn before handing
- * control to the unmodified ReflectionHLE game-state initialization. */
-static void drawTop(const Cat3DSInstallStatus states[CAT3DS_GAME_COUNT], int selected)
+static bool canLaunch(int game, const Cat3DSInstallStatus &s)
 {
-    rect(0, 0, 320, 200, 0);
-    rect(8, 8, 304, 184, 1);
-    rect(16, 16, 288, 168, 0);
-    rect(16, 16, 288, 30, 1);
-    text8(48, 21, "C A T A C O M B   3 D S", 15);
-    text8(56, 34, "SELECT YOUR ADVENTURE", 14);
-    for (int i = 0; i < CAT3DS_GAME_COUNT; ++i)
-    {
-        const int y = 52 + 31 * i;
-        const bool active = i == selected;
-        rect(24, y, 272, 27, active ? 3 : 8);
-        rect(32, y + 2, 256, 23, active ? 1 : 0);
-        text8(40, y + 5, cat3dsGameName(i), active ? 15 : 7);
-        const Cat3DSInstallStatus &s = states[i];
-        const bool core = i == 3 ? cat3dsCanLaunchApocalypse(s) : playableCat3d(s);
-        const bool full = s.fileCount && s.validCount == s.fileCount;
-        const bool structural = s.resourceGraphicsValid && s.resourceAudioMapsPresent;
-        const char *label = !s.directoryFound ? "GAME FOLDER UNAVAILABLE" :
-            full ? "FULL EDITION VERIFIED" :
-            core ? "MAIN DATA VERIFIED" :
-            structural ? "EGA ARCHIVE COMPATIBLE" :
-            s.resourceGraphicsValid ? "EGA OK / CHECK OTHER FILES" :
-            s.presentCount ? "CHECK GAME DATA" : "AWAITING GAME DATA";
-        text8(40, y + 15, label, (full || core || structural) ? 10 : 14);
-        if (active)
-            text8(272, y + 8, ">", 15);
+    switch (game) {
+    case 0: return playableCat3d(s);
+    case 1: return s.resourceGraphicsValid && s.resourceAudioMapsPresent && s.resourceLayoutValid;
+    case 2: return cat3dsCanLaunchArmageddon(s);
+    case 3: return cat3dsCanLaunchApocalypse(s);
+    default: return false;
     }
-    /* As in the original menu: A opens the selected game's details. */
-    text8(56, 183, "A: DETAILS     Y: RESCAN", 15);
 }
 
-static void drawBottom(const Cat3DSInstallStatus states[CAT3DS_GAME_COUNT],
-                       int selected, bool details, const char *mkdirFailed)
+static void lettering(int y, const char *title, int scale, uint8_t color)
 {
-    std::printf("\x1b[2J\x1b[H");
+    int x = (kWidth - int(strlen(title))*8*scale)/2;
+    for (; *title; ++title, x+=8*scale) {
+        const auto *glyph = g_cga_8x8TextFont + (unsigned char)*title*64;
+        for (int v=0; v<8; ++v) for (int u=0; u<8; ++u)
+            if (glyph[v*8+u]) rect(x+u*scale,y+v*scale,scale,scale,color);
+    }
+}
+
+static void drawTop(bool confirmExit)
+{
+    rect(0,0,kWidth,kHeight,0);
+    for (int y=0; y<240; y+=16)
+        for (int x=-(y%32); x<400; x+=32) {
+            rect(x+1,y+1,30,14,1);
+            rect(x+2,y+2,28,1,8);
+        }
+    rect(0,49,400,142,0);
+    rect(0,50,400,2,6);
+    rect(0,187,400,2,6);
+    if (confirmExit) {
+        lettering(92,"Exit Catacomb 3DS?",2,15);
+        lettering(145,"A: Exit    B: Back",1,14);
+        return;
+    }
+    lettering(69,"The",2,11);
+    lettering(101,"Catacomb 3DS",4,6);
+    lettering(98,"Catacomb 3DS",4,14);
+    lettering(151,"by xXNukem",2,15);
+}
+
+// Compose a complete selector page before exposing it to the LCD. A libctru
+// PrintConsole would install process-wide stdout/stderr handlers and swap both screens.
+struct BottomPage {
+    char cells[30][40] = {};
+    int col = 0, row = 0;
+    void print(const char *format, ...) {
+        char buf[512];
+        va_list args;
+        va_start(args, format);
+        vsnprintf(buf, sizeof buf, format, args);
+        va_end(args);
+        for (const char *p=buf; *p; ++p) {
+            if (*p=='\n') { col=0; ++row; continue; }
+            if (col==40) { col=0; ++row; }
+            while (row>=30) {
+                memmove(cells[0],cells[1],sizeof cells-sizeof cells[0]);
+                memset(cells[29],0,sizeof cells[29]);
+                --row;
+            }
+            cells[row][col++]=*p;
+        }
+    }
+    void present(int highlighted=-1) const {
+        u16 stride, columns;
+        auto *fb=(uint16_t*)gfxGetFramebuffer(GFX_BOTTOM,GFX_LEFT,&stride,&columns);
+        if (!fb || stride!=240 || columns!=320) return;
+        for (int y=0; y<240; ++y)
+            for (int x=0; x<320; ++x) {
+                unsigned ch=(unsigned char)cells[y/8][x/8];
+                bool active = highlighted>=0 && y>=24+32*highlighted && y<48+32*highlighted;
+                bool ink = ch && g_cga_8x8TextFont[ch*64+(y%8)*8+x%8];
+                fb[x*stride+239-y]=ink ? (active ? 0xffec : 0xffff) : (active ? 0x1951 : 0x000a);
+            }
+        GSPGPU_FlushDataCache(fb,stride*columns*2);
+        gfxScreenSwapBuffers(GFX_BOTTOM,false);
+    }
+};
+
+static void drawBottom(const Cat3DSInstallStatus states[CAT3DS_GAME_COUNT],
+                       int selected, bool details, const char *mkdirFailed, const char *launchError)
+{
+    BottomPage page;
     const Cat3DSInstallStatus &s = states[selected];
-    std::printf("CATACOMB 3DS\n-------------------------------\n\n");
-    std::printf("%s\n\n", cat3dsGameName(selected));
     if (!details)
     {
-        if (!s.directoryFound)
-            std::printf("Game folder unavailable\n");
-        else if (s.fileCount && s.validCount == s.fileCount)
-            std::printf("Full original edition verified\n");
-        else if (playableCat3d(s))
-            std::printf("Main data verified (4/4)\n");
-        else if (s.resourceGraphicsValid && s.resourceAudioMapsPresent)
-            std::printf("Original EGA archive readable\n");
-        else if (!s.presentCount)
-            std::printf("Folder ready - copy DOS data\n");
-        else
-            std::printf("Main data: %d/%d verified\n", s.coreValidCount, s.coreFileCount);
-        std::printf("\nD-PAD: Choose  A: Details\nY: Rescan     START: Exit\n");
+        page.print("\n  SELECT YOUR ADVENTURE\n\n");
+        for (int i=0; i<CAT3DS_GAME_COUNT; ++i) {
+            const auto &entry = states[i];
+            page.print(" %c %s\n   %s\n\n\n", i==selected ? '>' : ' ', cat3dsGameName(i),
+                       canLaunch(i,entry) ? "Ready to play" :
+                       !entry.directoryFound ? "Unavailable - missing folder" :
+                       !entry.presentCount ? "Unavailable - copy DOS data" : "Unavailable - check files");
+        }
+        page.print(" D-pad: Choose   A: Start\n X: Details      Y: Rescan\n START: Exit");
     }
     else
     {
-        std::printf("Detected: %s\n", s.versionName ? s.versionName : "unknown");
-        std::printf("Main data: %d/%d\n", s.coreValidCount, s.coreFileCount);
-        std::printf("Other files: %d/%d\n", s.validCount - s.coreValidCount,
+        page.print("%s\n\n", cat3dsGameName(selected));
+        if (s.detectedEdition)
+            page.print("Detected: %s\nEXE: %s\n", s.detectedEdition, s.resourceExeName);
+        page.print("Reference edition: %s\n", s.versionName ? s.versionName : "unknown");
+        page.print("Main data: %d/%d\n", s.coreValidCount, s.coreFileCount);
+        page.print("Other files: %d/%d\n", s.validCount - s.coreValidCount,
                     s.fileCount - s.coreFileCount);
-        std::printf("EGA archive: %s\n", s.resourceGraphicsValid ? "readable" : "not validated");
+        page.print("EGA archive: %s\n", s.resourceGraphicsValid ? "readable" : "not validated");
+        if (s.coreProblemFile && s.coreProblemReason && !s.compatibleGameTables && !s.detectedEdition)
+            page.print("%s: %s\n", s.coreProblemFile, s.coreProblemReason);
+        if (s.compatibleGameTables && !s.detectedEdition)
+            page.print("Verified EXE tables: %s\n", s.resourceExeName);
         if (selected == 1)
         {
             // SHP01..SHP12 belong to the external DOS intro program,
@@ -125,42 +158,45 @@ static void drawBottom(const Cat3DSInstallStatus states[CAT3DS_GAME_COUNT],
             const bool abyssReady = s.resourceGraphicsValid &&
                                     s.resourceAudioMapsPresent &&
                                     s.resourceLayoutValid;
-            std::printf("\nEGA: %s  AUDIO/MAPS: %s\n",
+            page.print("\nEGA: %s  AUDIO/MAPS: %s\n",
                         s.resourceGraphicsValid ? "OK" : "FAIL",
                         s.resourceAudioMapsPresent ? "OK" : "FAIL");
-            std::printf("EXE TABLES: %s\n", s.resourceLayoutValid ? "OK" : "FAIL");
+            page.print("EXE TABLES: %s\n", s.resourceLayoutValid ? "OK" : "FAIL");
             if (abyssReady)
-                std::printf("A: START CATACOMB ABYSS\n");
+                page.print("A: START CATACOMB ABYSS\n");
             else
-                std::printf("Cannot start: check failed fields\n");
+                page.print("Cannot start: check failed fields\n");
             if (s.resourceIssue[0] && !abyssReady)
-                std::printf("Probe: %.72s\n", s.resourceIssue);
+                page.print("Probe: %s\n", s.resourceIssue);
             if (!s.resourceShapesPresent)
-                std::printf("Intro SHP: absent (not game blocker)\n");
+                page.print("Intro SHP: absent (not game blocker)\n");
         }
         else if (selected == 3)
         {
-            std::printf(cat3dsCanLaunchApocalypse(s) ? "\nA: START CATACOMB APOCALYPSE\n" :
-                                                       "\nRequires matching v1.01 game files.\n");
-            std::printf("Intro and hint book files optional.\n");
+            page.print(cat3dsCanLaunchApocalypse(s) ? "\nA: START CATACOMB APOCALYPSE\n" :
+                                                       "\nCannot verify game archives or EXE tables.\n");
+            page.print("Intro and hint book files optional.\n");
         }
         else if (selected == 2)
-            std::printf(cat3dsCanLaunchArmageddon(s) ? "\nA: START CATACOMB ARMAGEDDON\n" : "\nRequires matching v1.02 DOS files.\n");
+            page.print(cat3dsCanLaunchArmageddon(s) ? "\nA: START CATACOMB ARMAGEDDON\n" : "\nCannot verify game archives or EXE tables.\n");
         else if (selected == 0 && playableCat3d(s))
-            std::printf("\nA: START ORIGINAL CATACOMB 3-D\n(ReflectionHLE engine)\n");
+            page.print("\nA: START ORIGINAL CATACOMB 3-D\n(ReflectionHLE engine)\n");
         else if (selected == 0)
-            std::printf("\nCatacomb 3-D v1.22 requires\nmatching original game files.\n");
+            page.print("\nCannot verify original game files.\n");
         else
-            std::printf("\nOriginal game engine for this\nepisode is not integrated yet.\n");
-        std::printf("\nB: Back   Y: Rescan\nSTART: Exit\n");
+            page.print("\nOriginal game engine for this\nepisode is not integrated yet.\n");
+        if (selected >= 2 && !canLaunch(selected,s) && s.resourceIssue[0])
+            page.print("%s\n", s.resourceIssue);
+        page.print("\nB: Back   Y: Rescan\nSTART: Exit\n");
     }
     if (mkdirFailed)
-        std::printf("\nCannot create folder:\n%s\n", mkdirFailed);
-    std::fflush(stdout);
+        page.print("\nCannot create folder:\n%s\n", mkdirFailed);
+    if (launchError && details) page.print("%s\n", launchError);
+    page.present(details ? -1 : selected);
 }
 } // namespace
 
-extern "C" int cat3dsSelectGame(void)
+extern "C" int cat3dsSelectGame(Cat3DSInstallStatus *chosen, int initialGame = 0, const char *launchError = nullptr)
 {
     /* SDL is started here only for menu presentation. Release all SDL
      * resources before ReflectionHLE's BE_ST_InitCommon starts its backend. */
@@ -185,16 +221,21 @@ extern "C" int cat3dsSelectGame(void)
         return -1;
     }
     SDL_SetTextureScaleMode(texture, SDL_SCALEMODE_NEAREST);
-    const devoptab_t *oldOut = devoptab_list[STD_OUT];
-    const devoptab_t *oldErr = devoptab_list[STD_ERR];
-    consoleInit(GFX_BOTTOM, nullptr);
-
+    // Optional 400x240 title artwork, including the author credit.
+    SDL_Surface *art = SDL_LoadBMP("sdmc:/3ds/catacomb-3ds/logo.bmp");
+    SDL_Texture *logo = art ? SDL_CreateTextureFromSurface(renderer, art) : nullptr;
+    SDL_DestroySurface(art);
     const char *mkdirFailed = nullptr;
     cat3dsEnsureGameFolders(&mkdirFailed);
-    Cat3DSInstallStatus states[CAT3DS_GAME_COUNT] = {};
-    cat3dsScanInstallations(states);
-    int selected = 0;
-    bool details = false;
+    static Cat3DSInstallStatus states[CAT3DS_GAME_COUNT];
+    static bool haveListing;
+    bool cached = haveListing && !launchError;
+    if (!cached) cat3dsScanInstallations(states);
+    haveListing = true;
+
+    gfxSetScreenFormat(GFX_BOTTOM, GSP_RGB565_OES);
+    int selected = initialGame;
+    bool details = launchError != nullptr;
     bool confirmExit = false;
     bool redraw = true;
     int selectionResult = -1;
@@ -225,9 +266,8 @@ extern "C" int cat3dsSelectGame(void)
                 continue;
             }
         } else if (keys & KEY_START) {
-            std::printf("\x1b[2J\x1b[HExit Catacomb 3DS?\n\nA: Exit    B: Back\n");
             confirmExit = true;
-            continue;
+            redraw = true;
         }
         else if ((keys & KEY_B) && details)
         {
@@ -236,8 +276,10 @@ extern "C" int cat3dsSelectGame(void)
         }
         else if (keys & KEY_Y)
         {
+            launchError = nullptr;
             cat3dsEnsureGameFolders(&mkdirFailed);
             cat3dsScanInstallations(states);
+            cached = false;
             redraw = true;
         }
         else if (!details)
@@ -252,62 +294,56 @@ extern "C" int cat3dsSelectGame(void)
                 selected = (selected + 1) % CAT3DS_GAME_COUNT;
                 redraw = true;
             }
-            if (keys & KEY_A)
-            {
-                details = true;
+        }
+        if (!confirmExit && (keys & KEY_TOUCH) && !details) {
+            touchPosition pos;
+            hidTouchRead(&pos);
+            if (pos.py >= 24 && pos.py < 152) {
+                selected = (pos.py-24)/32;
                 redraw = true;
             }
         }
-        else if (keys & KEY_A)
-        {
-            if (selected == 0 && playableCat3d(states[0]))
-            {
-                selectionResult = 0;
+        if (!confirmExit && (keys & (KEY_A | KEY_X))) {
+            if (cached) cat3dsScanInstallation(selected, states[selected]);
+            if ((keys & KEY_A) && canLaunch(selected,states[selected])) {
+                selectionResult = selected;
                 break;
             }
-            if (selected == 3 && cat3dsCanLaunchApocalypse(states[3]))
-            {
-                selectionResult = 3;
-                break;
-            }
-            if (selected == 2 && cat3dsCanLaunchArmageddon(states[2]))
-            {
-                selectionResult = 2;
-                break;
-            }
-            if (selected == 1 && states[1].resourceGraphicsValid &&
-                states[1].resourceAudioMapsPresent && states[1].resourceLayoutValid)
-            {
-                selectionResult = 1;
-                break;
-            }
+            details = true;
+            redraw = true;
         }
         if (redraw)
         {
-            drawTop(states, selected);
+            drawTop(confirmExit);
             SDL_UpdateTexture(texture, nullptr, pixels, kWidth * sizeof(uint32_t));
             SDL_RenderClear(renderer);
-            SDL_RenderTexture(renderer, texture, nullptr, nullptr);
+            SDL_RenderTexture(renderer, logo && !confirmExit ? logo : texture, nullptr, nullptr);
             SDL_RenderPresent(renderer);
-            drawBottom(states, selected, details, mkdirFailed);
+            if (confirmExit) {
+                BottomPage prompt;
+                prompt.print("\n  Exit application?\n\n  A: Exit    B: Back");
+                prompt.present();
+            } else drawBottom(states, selected, details, mkdirFailed, selected == initialGame ? launchError : nullptr);
             redraw = false;
         }
         SDL_Delay(16);
     }
 
-    while (selectionResult >= 0 && aptMainLoop()) {
+    while (selectionResult >= 0) {
+        if (!aptMainLoop()) {
+            selectionResult = -1;
+            break;
+        }
         hidScanInput();
-        if (!hidKeysHeld()) break;
+        // Only the launch button must be released before the engine sees HID.
+        if (!(hidKeysHeld() & KEY_A)) break;
         SDL_Delay(16);
     }
-    // The text console points into the selector framebuffer until gfxExit.
-    std::fflush(stdout);
-    std::fflush(stderr);
-    devoptab_list[STD_OUT] = oldOut;
-    devoptab_list[STD_ERR] = oldErr;
+    SDL_DestroyTexture(logo);
     SDL_DestroyTexture(texture);
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
     SDL_Quit();
+    if (selectionResult >= 0 && chosen) *chosen = states[selectionResult];
     return selectionResult;
 }

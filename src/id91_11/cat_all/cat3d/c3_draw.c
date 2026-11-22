@@ -112,8 +112,8 @@ fixed scale;
 static double cat3dsStereoProjectionShift;
 static uint64_t renderStart;
 /* Both 2D and 3D gameplay use this projection so activating the physical
- * slider never changes the world FOV. BStone 400x240 FOV = 74.61 deg. */
-#define CAT3DS_STEREO_FOV_SCALE 378
+ * slider never changes the world FOV. Use the original focal length in tile units. */
+#define CAT3DS_STEREO_FOV_SCALE (GLOBAL1 / VIEWWIDTH)
 
 /* Sprite masking must use the per-eye wall depth from the V7 column
  * raycaster. Keep this off for the untouched original 2D renderer. */
@@ -1034,7 +1034,7 @@ void TransformPoint (fixed gx, fixed gy, id0_int_t *screenx, id0_unsigned_t *scr
 #ifdef __3DS__
   if (scale == CAT3DS_STEREO_FOV_SCALE)
   /* Catacomb's 2D rays bisect the middle pair of pixels. Match that
-   * half-pixel centre in the off-axis wall projection, as in BStone. */
+   * half-pixel centre in the off-axis wall projection. */
     *screenx = (id0_int_t)((double)CENTERX + 0.5 +
                  (double)ny / ratio + cat3dsStereoProjectionShift);
   else
@@ -1098,7 +1098,12 @@ void TransformActor (objtype *ob)
 #endif
     ob->viewx = CENTERX + ny/ratio;
 
+#ifdef __3DS__
+  // Clip sprites in front of the camera to the largest available scaler.
+  ob->viewheight = centerDepth > 0 ? (id0_unsigned_t)fmin(VIEWWIDTH, TILEGLOBAL/ratio) : 0;
+#else
   ob->viewheight = TILEGLOBAL/ratio;
+#endif
 }
 
 //==========================================================================
@@ -1657,18 +1662,9 @@ static double Cat3DS_ProjectionShift(fixed eyeOffset)
 #endif
 
 #ifdef __3DS__
-/* CAT3DS_STEREO_COLUMNS_V7
- * The outline-following Catacomb renderer projects an entire wall between
- * its endpoints. That is NOT BStone's stereo renderer, which tests the world
- * independently along each screen ray. In 3D ONLY, cast one world-space ray
- * per column of each eye. The same tracer renders the mono 3DS view to
- * keep the FOV consistent when the slider is activated. Reuse Catacomb's
- * original EGA scalers, actors, video pages and HUD.
- *
- * Crucially, start at the player's projection plane, one tile in front of
- * Catacomb's behind-the-player optical origin (as TraceRay already does).
- * This avoids hitting walls behind the player's collision plane.
- */
+/* Cast independent rays from the player-centered camera of each eye.
+ * The centered pass supplies visibility to the simulation. Eye passes
+ * own their wall depths and reuse the original EGA textures and scalers. */
 static void Cat3DS_DrawStereoColumns(void)
 {
     const double invTile = 1.0 / (double)TILEGLOBAL;
@@ -1699,7 +1695,7 @@ static void Cat3DS_DrawStereoColumns(void)
         /* The ray direction is unnormalised: its parameter is already
            the perpendicular optical depth, with no fisheye distortion. */
         const Cat3DSWallHit hit = Cat3DS_TraceColumn(tilemap[0], spotvis[0], MAPSIZE,
-            mapwidth, mapheight, originX, originY, dx, dy, (double)FOCALLENGTH * invTile);
+            mapwidth, mapheight, originX, originY, dx, dy, 0.0);
         if (viewPass == centerVisibility) continue;
         cat3dsWallDepth[x] = (fixed)(hit.depth * TILEGLOBAL);
         const int color = hit.tile;
@@ -1762,14 +1758,12 @@ asm	rep stosw
 	fineviewangle = viewangle*(FINEANGLES/ANGLES);
 	viewsin = sintable[viewangle];
 	viewcos = costable[viewangle];
-	viewx = player->x - FixedByFrac(FOCALLENGTH,viewcos);
-	viewy = player->y + FixedByFrac(FOCALLENGTH,viewsin);
 #ifdef __3DS__
-    /* Match BStone: keep the actual fractional camera position even with
-     * both eyes coincident. Avoid a view-position jump when enabling stereo. */
-    viewx += FixedByFrac(eyeOffset, viewsin);
-    viewy += FixedByFrac(eyeOffset, viewcos);
+    viewx = player->x + FixedByFrac(eyeOffset, viewsin);
+    viewy = player->y + FixedByFrac(eyeOffset, viewcos);
 #else
+    viewx = player->x - FixedByFrac(FOCALLENGTH,viewcos);
+    viewy = player->y + FixedByFrac(FOCALLENGTH,viewsin);
     viewx &= 0xfffffc00;
     viewy &= 0xfffffc00;
     viewx += 0x180;
@@ -1959,23 +1953,21 @@ void ThreeDRefresh(void)
 {
     renderStart = SDL_GetPerformanceCounter();
     const fixed savedScale = scale;
-    /* Use the same BStone-matched horizontal optics with slider off/on. */
+    /* Use the same horizontal optics with slider off/on. */
     scale = CAT3DS_STEREO_FOV_SCALE;
     int offset = fizzlein ? 0 : Cat3DS_DualScreenStereoOffset();
     if (offset > 0) {
-        /* Keep the physical eye centers in open map cells. Both eyes MUST
-         * use the same baseline, or stereo becomes asymmetric. The virtual
-         * focal point behind the player is NOT a collision candidate.
-         * A focal point outside the map, however, is never permitted. */
         const fixed perpX = sintable[player->angle];
         const fixed perpY = costable[player->angle];
-        const fixed focX = player->x - FixedByFrac(FOCALLENGTH, perpY);
-        const fixed focY = player->y + FixedByFrac(FOCALLENGTH, perpX);
+        offset = Cat3DS_Baseline(offset, VIEWWIDTH, (double)FOCALLENGTH / scale);
         offset = Cat3DS_LimitCornerOffset(offset, tilemap[0], MAPSIZE, mapwidth, mapheight,
-            (double)focX / TILEGLOBAL, (double)focY / TILEGLOBAL,
+            (double)player->x / TILEGLOBAL, (double)player->y / TILEGLOBAL,
             (double)FixedByFrac(GLOBAL1, perpY) / TILEGLOBAL,
             -(double)FixedByFrac(GLOBAL1, perpX) / TILEGLOBAL,
             VIEWWIDTH, (double)FOCALLENGTH / scale);
+        offset = Cat3DS_LimitActorOffset(offset, player,
+            (double)FixedByFrac(GLOBAL1, perpY) / TILEGLOBAL,
+            -(double)FixedByFrac(GLOBAL1, perpX) / TILEGLOBAL, VIEWWIDTH, (double)FOCALLENGTH / scale);
         /* At small slider values the baseline is already close to zero.
          * If either eye moves into a solid tile, halve both offsets
          * symmetrically to avoid broken single-eye geometry. */
@@ -1986,11 +1978,8 @@ void ThreeDRefresh(void)
             for (int eye = -1; eye <= 1; eye += 2) {
                 const int px = (player->x + eye * dx) >> TILESHIFT;
                 const int py = (player->y + eye * dy) >> TILESHIFT;
-                const int fx = (focX + eye * dx) >> TILESHIFT;
-                const int fy = (focY + eye * dy) >> TILESHIFT;
                 if (px < 0 || px >= mapwidth || py < 0 || py >= mapheight ||
-                    tilemap[px][py] || fx < 0 || fx >= mapwidth ||
-                    fy < 0 || fy >= mapheight) { safe = 0; break; }
+                    tilemap[px][py]) { safe = 0; break; }
             }
             if (safe) break;
         }

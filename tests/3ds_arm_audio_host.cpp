@@ -60,7 +60,6 @@ int main()
         assert(!SD_SoundPlaying());
     }
     assert(pcFrequency == 11 * 60 && oplFrequency == 11);
-#ifdef REFKEEN_VER_CAT3D
     uint16_t sequence[] = {4, 0x2aa0, 1};
     assert(SD_SetMusicMode(smm_AdLib));
     SD_StartMusic(reinterpret_cast<MusicGroup *>(sequence));
@@ -73,7 +72,6 @@ int main()
     SD_MusicOn();
     timerTick();
     assert(oplFrequency == 0x2a);
-#endif
     SD_Shutdown();
     assert(!timerTick && locks == 0);
     SD_Startup();
@@ -83,5 +81,5 @@ int main()
     assert(!SD_SoundPlaying());
     SD_Shutdown();
     assert(!timerTick && locks == 0);
-    puts("synthetic PC speaker and AdLib effects: PASS");
+    puts("synthetic PC speaker and AdLib effects, music start/stop/resume: PASS");
 }

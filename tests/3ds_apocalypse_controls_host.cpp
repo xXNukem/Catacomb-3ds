@@ -44,8 +44,8 @@ void checkApocalypseControlsAndLayout()
     assert(functions.pbuttons[BE_ST_CTRL_BUT_DPAD_LEFT].val == BE_ST_SC_F4);
 
     auto world = Cat3DS_GetLayout(true, false, VIEWWIDTH);
-    assert(world.sourceWidth == VIEWWIDTH && world.sourceHeight == VIEWHEIGHT);
-    assert(world.outputWidth == 400 && world.outputHeight == 180 && STATUSLINES == 80);
+    assert(world.sourceWidth == 240 && world.sourceHeight == VIEWHEIGHT);
+    assert(world.outputWidth == 400 && world.outputHeight == 240 && STATUSLINES == 80);
     auto help = Cat3DS_GetLayout(true, true, 640);
     assert(help.sourceWidth == 640 && help.sourceHeight == VIEWHEIGHT + STATUSLINES);
 }

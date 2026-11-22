@@ -31,7 +31,9 @@ PREFIX="${ROOT}/platform/3ds/.original-sdl3-prefix"
 SDL_SOURCE="${ROOT}/platform/3ds/.sdl3-source"
 SDL_BUILD="${ROOT}/platform/3ds/.sdl3-build"
 SDL_CONFIG="${PREFIX}/lib/cmake/SDL3/SDL3Config.cmake"
-if [[ ! -f "${SDL_CONFIG}" ]]; then
+AUDIO_PATCH="${ROOT}/platform/3ds/tools/sdl3-3ds-audio-close.patch"
+PATCH_STAMP="${PREFIX}/.cat3ds-audio-close.patch"
+if [[ ! -f "${SDL_CONFIG}" ]] || ! cmp -s "${AUDIO_PATCH}" "${PATCH_STAMP}"; then
   VER="3.4.18"
   ARCHIVE="${ROOT}/platform/3ds/.SDL3-${VER}.tar.gz"
   URL="https://github.com/libsdl-org/SDL/releases/download/release-${VER}/SDL3-${VER}.tar.gz"
@@ -47,6 +49,7 @@ if [[ ! -f "${SDL_CONFIG}" ]]; then
   fi
   mkdir -p "${SDL_SOURCE}"
   tar -xzf "${ARCHIVE}" -C "${SDL_SOURCE}" --strip-components=1
+  patch -d "${SDL_SOURCE}" -p1 < "${AUDIO_PATCH}"
   cmake -S "${SDL_SOURCE}" -B "${SDL_BUILD}" \
     -DCMAKE_TOOLCHAIN_FILE="${DEVKITPRO}/cmake/3DS.cmake" \
     -DCMAKE_BUILD_TYPE=Release \
@@ -54,6 +57,7 @@ if [[ ! -f "${SDL_CONFIG}" ]]; then
     -DSDL_SHARED=OFF -DSDL_STATIC=ON -DSDL_TESTS=OFF -DSDL_EXAMPLES=OFF
   cmake --build "${SDL_BUILD}" --parallel 4
   cmake --install "${SDL_BUILD}"
+  cp "${AUDIO_PATCH}" "${PATCH_STAMP}"
 fi
 
 ENGINE_BUILD="${ROOT}/platform/3ds/build-original"

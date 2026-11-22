@@ -1,0 +1,59 @@
+--- a/src/audio/n3ds/SDL_n3dsaudio.h
++++ b/src/audio/n3ds/SDL_n3dsaudio.h
+@@ -35,6 +35,7 @@
+     LightLock lock;
+     CondVar cv;
+     bool isCancelled;
++    bool ndspInitialized;
+ };
+ 
+ #endif // SDL_n3dsaudio_h
+--- a/src/audio/n3ds/SDL_n3dsaudio.c
++++ b/src/audio/n3ds/SDL_n3dsaudio.c
+@@ -96,6 +96,8 @@
+             return SDL_SetError("DSP init failed. Error code: 0x%lX", ndsp_init_res);
+         }
+     }
++
++    device->hidden->ndspInitialized = true;
+ 
+     // Initialise internal state
+     LightLock_Init(&device->hidden->lock);
+@@ -222,21 +224,22 @@
+         return;
+     }
+ 
+-    contextLock(device);
+-
+-    dspUnhook(&dsp_hook);
+-    ndspSetCallback(NULL, NULL);
+-
+-    if (!device->hidden->isCancelled) {
+-        ndspChnReset(0);
+-        SDL_memset(device->hidden->waveBuf, 0, sizeof(ndspWaveBuf) * NUM_BUFFERS);
+-        CondVar_Broadcast(&device->hidden->cv);
+-    }
+-
+-    contextUnlock(device);
+-
+-    ndspExit();
+-
++    // Catacomb 3DS: SDL also calls CloseDevice after a partial open.
++    if (audio_device == device) {
++        dspUnhook(&dsp_hook);
++        ndspSetCallback(NULL, NULL);
++        contextLock(device);
++        if (!device->hidden->isCancelled) {
++            ndspChnReset(0);
++        }
++        contextUnlock(device);
++        audio_device = NULL;
++    }
++    if (device->hidden->ndspInitialized) {
++        ndspExit();
++    }
++
++    // Keep the linear allocation address until the DSP thread has stopped.
+     if (device->hidden->waveBuf[0].data_vaddr) {
+         linearFree((void *)device->hidden->waveBuf[0].data_vaddr);
+     }

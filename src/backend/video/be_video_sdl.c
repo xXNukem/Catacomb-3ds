@@ -311,8 +311,14 @@ bool BE_ST_HostGfx_GetFullScreenToggle(void)
 	return ((SDL_GetWindowFlags(g_sdlWindow) & SDL_WINDOW_FULLSCREEN) == SDL_WINDOW_FULLSCREEN);
 }
 
+#ifdef __3DS__
+#include "cat3ds_dualscreen.h"
+#endif
 void BEL_ST_UpdateWindow(void)
 {
+#ifdef __3DS__
+    if (!Cat3DS_DualScreenPrepareSDL()) return;
+#endif
 	SDL_RenderPresent(g_sdlRenderer);
 }
 

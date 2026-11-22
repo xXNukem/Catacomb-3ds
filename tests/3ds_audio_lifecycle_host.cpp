@@ -2,6 +2,7 @@
 #include "backend/audio/be_audio_mixer.c"
 #include "be_sound_device_flags.h"
 #include <cassert>
+#include <initializer_list>
 #include <cstdlib>
 
 RefKeenConfig g_refKeenCfg = {};
@@ -18,8 +19,24 @@ void BE_ST_SetTimer(uint16_t word) { BEL_ST_AudioMixerUpdateFromPITRateWord(word
 void BEL_ST_SetDigiMixerSource(BE_ST_AudioMixerSource*) { abort(); }
 void BEL_ST_GenDigiSamples(BE_ST_SndSample_T*,int) { abort(); }
 
+static int nextSample;
+static void ramp(BE_ST_SndSample_T *out, int n)
+{
+    while (n--) *out++ = ++nextSample;
+}
+
 int main()
 {
+    BESDLResamplingContext context = {};
+    BE_ST_SndSample_T input[] = {123, 234}, output[4] = {};
+    BEL_ST_InitResampling(&context, 48000, 24000, input);
+    uint32_t consumed, produced;
+    BEL_ST_DoResample(&context, &consumed, &produced, input, output, 2, 3);
+    assert(consumed == 2 && produced == 3);
+    BEL_ST_DoResample(&context, &consumed, &produced, input, output+3, 0, 1);
+    assert(!consumed && produced == 1 && output[0] == 123 && output[1] == 123 &&
+           output[2] == 234 && output[3] == 234);
+    BEL_ST_ShutdownResampling(&context);
     assert(SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy"));
     g_refKeenCfg.sndSampleRate=48000;
     BE_ST_SndSample_T full[4097], split[4097];
@@ -31,6 +48,21 @@ int main()
     BEL_ST_GenOPLSamples(split+2048,2048);
     BEL_ST_GenOPLSamples(split+4096,1);
     assert(!memcmp(full,split,sizeof full));
+    for (int channels=1; channels<=2; ++channels) {
+        nextSample=0;
+        BEL_ST_AudioMixerInit(48000,channels);
+        BEL_ST_AudioMixerAddSource(48000,512,BE_AUDIO_VOL_MAX,ramp);
+        BE_ST_SetTimer(1000);
+        BE_ST_SndSample_T block[514];
+        int position=0;
+        for (int n : {1,63,64,65,257}) {
+            BEL_ST_AudioMixerCallback(block,n);
+            for (int j=0;j<n*channels;++j)
+                assert(block[j]==position+j/channels+1);
+            position+=n;
+        }
+        BEL_ST_AudioMixerShutdown();
+    }
     g_refKeenCfg.oplEmulation=true;
     g_refKeenCfg.pcSpkVol=BE_AUDIO_VOL_MAX;
     for (int cycle=0; cycle<4; ++cycle) {

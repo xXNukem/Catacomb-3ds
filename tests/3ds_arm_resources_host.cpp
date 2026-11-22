@@ -66,8 +66,9 @@ void checkArmResources()
     assert(!strcmp(CAT3DS_APOC_DATA_PATH "/" BE_STR_GAMEVER_CATAPOC101,
                    "sdmc:/3ds/catacomb-3ds/saves-apoc/catapoc101"));
 #else
+    s.coreValidCount = s.coreFileCount = 4;
     assert(cat3dsCanLaunchArmageddon(s));
-    --s.validCount;
+    --s.coreValidCount;
     s.resourceGraphicsValid = s.resourceAudioMapsPresent = s.resourceLayoutValid = true;
     assert(!cat3dsCanLaunchArmageddon(s));
     assert(!strcmp(cat3dsGameFolder(2), "sdmc:/3ds/catacomb-3ds/games/catarm"));

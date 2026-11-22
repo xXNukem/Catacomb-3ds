@@ -1231,84 +1231,32 @@ void VWL_UpdateScreenBlocks (void)
 #undef UPDATEHIGH
 #define UPDATEHIGH 13 // hack for catacombs
 #endif
-	id0_byte_t *scanPtr = updateptr;
-	id0_byte_t *scanEndPtr = updateptr + UPDATEWIDE*UPDATEHIGH+1;
-	id0_word_t iterationsToDo = 0xFFFF; // definitely scan the entire thing
-
-	do
-	{
-		/*	
-		 * scan for a 1 in the update list, meaning a tile needs
-		 * to be copied from the master screen to the current screen
-		 */
-		while (iterationsToDo)
-		{
-			--iterationsToDo;
-			if (*(scanPtr++) == 1)
-			{
-				break;
-			}
-		}
-
-		if (scanPtr >= scanEndPtr) // all tiles have been scanned
-		{
-			memset(updateptr, 0, 2*(UPDATEWIDE*UPDATEHIGH/2)); // clear out the update matrix
-			return;
-		}
-		if (*scanPtr != 1)
-		{
-			//============
-			//
-			// copy a single tile
-			//
-			//============
-
-			++scanPtr; // we know the next tile is nothing
-			id0_word_t tileLoc = blockstarts[scanPtr-updateptr-2]; // start of tile location on screen
-			id0_word_t egaSrcOff = tileLoc+bufferofs;
-			id0_word_t egaDestOff = tileLoc+displayofs;
-			for (int loopVar = 15; loopVar; --loopVar)
-			{
-				BE_ST_EGAUpdateGFXByteInAllPlanesScrToScr(egaDestOff++, egaSrcOff++);
-				BE_ST_EGAUpdateGFXByteInAllPlanesScrToScr(egaDestOff++, egaSrcOff++);
-				egaSrcOff += linewidth-2;
-				egaDestOff += linewidth-2;
-			}
-			BE_ST_EGAUpdateGFXByteInAllPlanesScrToScr(egaDestOff++, egaSrcOff++);
-			BE_ST_EGAUpdateGFXByteInAllPlanesScrToScr(egaDestOff, egaSrcOff);
-			continue;
-		}
-		//============
-		//
-		// more than one tile in a row needs to be updated, so do it as a group
-		//
-		//============
-		id0_byte_t *rowScanStartPtr = scanPtr; // hold starting position + 1
-		++scanPtr; // we know the next tile also gets updated
-		// see how many more in a row
-		while (iterationsToDo)
-		{
-			--iterationsToDo;
-			if (*(scanPtr++) != 1)
-			{
-				break;
-			}
-		}
-		id0_word_t bytesPerRow = 2*(scanPtr - rowScanStartPtr);
-		id0_word_t tileLoc = blockstarts[rowScanStartPtr-updateptr-1]; // start of tile location
-		id0_word_t egaSrcOff = tileLoc+bufferofs;
-		id0_word_t egaDestOff = tileLoc+displayofs;
-		for (int loopVar = 15; loopVar; --loopVar)
-		{
-			BE_ST_EGAUpdateGFXBufferInAllPlanesScrToScr(egaDestOff, egaSrcOff, bytesPerRow);
-			egaSrcOff += linewidth;
-			egaDestOff += linewidth;
-		}
-		BE_ST_EGAUpdateGFXBufferInAllPlanesScrToScr(egaDestOff, egaSrcOff, bytesPerRow);
-		// was originally 0 at this point, then "decremented" by 1 to 0xFFFF for the loop above
-		// WARNING: iterationsToDo should be UNSIGNED in order to work properly
-		iterationsToDo = 0xFFFF;
-	} while (true);
+    const int tileCount = UPDATEWIDE * UPDATEHIGH;
+    int index = 0;
+    while (index < tileCount)
+    {
+        if (updateptr[index] != 1) {
+            ++index;
+            continue;
+        }
+        const int start = index++;
+        while (index < tileCount && updateptr[index] == 1)
+            ++index;
+        const id0_word_t bytesPerRow = 2 * (index - start);
+        id0_word_t source = bufferofs + blockstarts[start];
+        id0_word_t dest = displayofs + blockstarts[start];
+        for (int y = 0; y < 16; ++y) {
+            if (bytesPerRow == 2) {
+                BE_ST_EGAUpdateGFXByteInAllPlanesScrToScr(dest, source);
+                BE_ST_EGAUpdateGFXByteInAllPlanesScrToScr(dest+1, source+1);
+            } else {
+                BE_ST_EGAUpdateGFXBufferInAllPlanesScrToScr(dest, source, bytesPerRow);
+            }
+            dest += linewidth;
+            source += linewidth;
+        }
+    }
+    memset(updateptr, 0, tileCount);
 }
 
 #if 0

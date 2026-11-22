@@ -26,6 +26,7 @@
 #ifdef __3DS__
 #include "cat3ds_dualscreen.h"
 #include "cat3ds_menu.h"
+#include "cat3ds_wall_clearance.h"
 #endif
 
 REFKEEN_NS_B
@@ -2830,7 +2831,19 @@ void Thrust (id0_int_t angle, id0_unsigned_t speed)
 	xmove = FixedByFrac(speed,costable[angle]);
 	ymove = -FixedByFrac(speed,sintable[angle]);
 
+#ifdef __3DS__
+    auto wall = [](int x, int y) {
+        if (x < 0 || y < 0 || x >= mapwidth || y >= mapheight) return true;
+        const auto tile = actorat[x][y];
+        return tile && tile <= LASTTILE && (TILE_FLAGS(tile) & tf_SOLID) && !(TILE_FLAGS(tile) & tf_SPECIAL);
+    };
+    xmove = Cat3DS_WallStep(player->x,player->y,xmove,wall);
+#endif
 	ClipXMove(player,xmove);
+#ifdef __3DS__
+    ymove = Cat3DS_WallStep(player->y,player->x,ymove,
+                           [&](int y,int x) { return wall(x,y); });
+#endif
 	ClipYMove(player,ymove);
 	player->tilex = player->x >> TILESHIFT;
 	player->tiley = player->y >> TILESHIFT;
@@ -2904,6 +2917,10 @@ void ControlMovement (objtype *ob)
 		//
 		// turning
 		//
+#ifdef __3DS__
+		// Integrate the signed direction at the simulation tic rate.
+		ob->angle -= control.xaxis * tics * (running ? 4 : 2);
+#else
 		if (control.xaxis == 1)
 		{
 			ob->angle -= tics;
@@ -2916,6 +2933,7 @@ void ControlMovement (objtype *ob)
 			if (running)				// fast turn
 				ob->angle += (tics<<1);
 		}
+#endif
 
 		ob->angle -= (mousexmove/10);
 

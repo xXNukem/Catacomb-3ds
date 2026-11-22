@@ -1,16 +1,12 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-// Compiled in the original game's namespace so its window/font routines and
-// DOS save hooks remain in charge of drawing and serializing, respectively.
+// Compiled in the game's namespace to use its DOS save hooks.
 extern bool Cat3DS_ReadSavedGame(FILE *, bool apply, int &level);
 
 #include "cat3ds_slot_header.inc"
 
-static void Cat3DS_Text(int x, int y, const char *s)
-{
-    PrintX = x;
-    PrintY = y;
-    US_Print(s);
-}
+extern "C" void Cat3DS_DualScreenEnterMenu(void);
+extern "C" void Cat3DS_DualScreenLeaveMenu(void);
+extern "C" void Cat3DS_DrawSlotPage(const char *, const char *const *, const char *const *, int, const char *);
 
 // Read physical Nintendo buttons directly only inside this modal. Require a
 // fresh press, and consume its release before returning to the engine menu.
@@ -36,10 +32,7 @@ static u32 Cat3DS_SlotKey()
 
 static bool Cat3DS_SlotMessage(const char *text, bool confirm)
 {
-    US_DrawWindow(2, 8, 36, 5);
-    Cat3DS_Text(23, 71, text);
-    Cat3DS_Text(23, 89, confirm ? "A Replace     B Cancel" : "A / B Back");
-    VW_UpdateScreen();
+    Cat3DS_DrawSlotPage(text,nullptr,nullptr,-1,confirm ? "A Replace     B Cancel" : "A / B Back");
     for (;;) {
         u32 key = Cat3DS_SlotKey();
         if (key & KEY_B) return false;
@@ -77,21 +70,19 @@ static bool Cat3DS_RunSlots(bool saving)
     Cat3DS_SlotStatus status[6];
     for (int i = 0; i < 6; ++i)
         status[i] = Cat3DS_InspectSlot(profile, i, labels[i]);
+    struct MenuDisplay {
+        MenuDisplay() { Cat3DS_DualScreenEnterMenu(); }
+        ~MenuDisplay() { Cat3DS_DualScreenLeaveMenu(); }
+    } display;
     int slot = 0;
     for (;;) {
-        US_DrawWindow(2, 1, 36, 21);
-        Cat3DS_Text(23, 12, saving ? "Save game" : "Load game");
-        for (int i = 0; i < 6; ++i) {
-            char line[42];
-            const char *title = status[i] == SlotEmpty ? "Empty" :
-                                status[i] == SlotInvalid ? "Unreadable game" : labels[i].title;
-            snprintf(line, sizeof(line), "%c %d  %.32s", i == slot ? '>' : ' ', i+1, title);
-            Cat3DS_Text(23, 30+i*20, line);
-            if (status[i] == SlotReady) Cat3DS_Text(44, 39+i*20, labels[i].date);
+        const char *titles[6], *dates[6];
+        for (int i=0;i<6;++i) {
+            titles[i] = status[i]==SlotReady ? labels[i].title :
+                        status[i]==SlotEmpty ? "Empty" : "Unreadable game";
+            dates[i] = status[i]==SlotReady ? labels[i].date : "";
         }
-        Cat3DS_Text(23, 156, "Up/Down   A Select   B Back");
-        VW_UpdateScreen();
-        if (screenfaded) VW_FadeIn();
+        Cat3DS_DrawSlotPage(saving ? "Save game" : "Load game",titles,dates,slot,"Up/Down   A Select   B Back");
         u32 key = Cat3DS_SlotKey();
         if (key & KEY_B) return false;
         if (key & KEY_DUP) slot = (slot + 5) % 6;

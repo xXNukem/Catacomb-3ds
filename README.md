@@ -93,7 +93,7 @@ Keep the actual game files **directly inside** `cat3d/` or `catabyss/`, rather t
 
 ### 3. Start the game
 
-Open **Catacomb 3DS** from the Homebrew Launcher, select a game and press **A** to view its file status. Press **A** again to start a supported installation. Press **Y** to rescan the folders after copying files.
+Open **Catacomb 3DS** from the Homebrew Launcher, select a game and press **A** to start a supported installation. Press **X** for file details. Press **Y** to rescan the folders after copying files.
 
 If a game is not recognized, check that the files are in the correct folder and belong to a compatible version. The selector checks game-data contents, not just filenames.
 
@@ -102,7 +102,8 @@ If a game is not recognized, check that the files are in the correct folder and 
 | Button | Action |
 |:--|:--|
 | D-Pad Up / Down | Select a game |
-| A | View details / start a supported game |
+| A | Start a supported game |
+| X | View file details |
 | B | Back |
 | Y | Rescan game files |
 | START | Exit |

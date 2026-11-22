@@ -49,6 +49,9 @@
 //
 
 #include "id_heads.h"
+#if defined(__3DS__) && defined(REFKEEN_VER_CATACOMB_ALL)
+#include "cat3ds_prompts.h"
+#endif
 
 //#pragma hdrstop
 
@@ -1120,6 +1123,12 @@ US_CPrintLine(const id0_char_t *s, const id0_char_t *optse)
 	// - The functions pointed by USL_MeasureString and USL_DrawString are
 	// similarly modified.
 
+#if defined(__3DS__) && defined(REFKEEN_VER_CATACOMB_ALL)
+    if (const char *prompt = Cat3DS_ControlPrompt(s, optse)) {
+        s = prompt;
+        optse = NULL;
+    }
+#endif
 	USL_MeasureString(s,optse,&w,&h);
 	//USL_MeasureString(s,&w,&h);
 

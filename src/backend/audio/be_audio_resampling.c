@@ -198,7 +198,8 @@ void BEL_ST_DoResample(BESDLResamplingContext *context,
 	{
 		samples_consumed = samples_produced = 0;
 		/*** Note: Casting to unsigned in order to suppress comparison-related warnings ***/
-		while (((unsigned)samples_consumed < numOfAvailInputSamples) && ((unsigned)samples_produced < maxSamplesToOutput))
+		while ((context->sampleRateConvCounter || samples_consumed < numOfAvailInputSamples) &&
+		       samples_produced < maxSamplesToOutput)
 		{
 			if (context->sampleRateConvCounter)
 			{

@@ -166,7 +166,7 @@ void CalibrateJoystick(id0_short_t joynum);
 void	CenterWindow(id0_word_t w,id0_word_t h)
 {
 #ifdef __3DS__
-	Cat3DS_DualScreenBeginLevelTransition();
+	Cat3DS_DualScreenSetModalOverlay(1);
 #endif
 	US_DrawWindow(((MAXX / 8) - w) / 2,((MAXY / 8) - h) / 2,w,h);
 }
@@ -795,7 +795,7 @@ void PollControls (void)
 
 //==========================================================================
 
-#if 0
+#ifdef __3DS__
 /*
 =================
 =
@@ -812,8 +812,8 @@ void StopMusic(void)
 	for (i = 0;i < LASTMUSIC;i++)
 		if (audiosegs[STARTMUSIC + i])
 		{
-			MM_SetPurge(&((memptr)audiosegs[STARTMUSIC + i]),3);
-			MM_SetLock(&((memptr)audiosegs[STARTMUSIC + i]),false);
+			MM_SetPurge((memptr *)&audiosegs[STARTMUSIC + i],3);
+			MM_SetLock((memptr *)&audiosegs[STARTMUSIC + i],false);
 		}
 }
 
@@ -835,8 +835,9 @@ void StartMusic(void)
 
 	SD_MusicOff();
 	chunk =	TOOHOT_MUS;
-//	if ((chunk == -1) || (MusicMode != smm_AdLib))
-//DEBUG control panel		return;
+    // Older Adventure configurations recorded music off while the sequencer was disabled.
+    if (MusicMode != smm_AdLib && !SD_SetMusicMode(smm_AdLib))
+        return;
 
 	MM_BombOnError (false);
 	CA_CacheAudioChunk(STARTMUSIC + chunk);
@@ -845,8 +846,8 @@ void StartMusic(void)
 		mmerror = false;
 	else
 	{
-		MM_SetLock(&((memptr)audiosegs[STARTMUSIC + chunk]),true);
-		SD_StartMusic((MusicGroup far *)audiosegs[STARTMUSIC + chunk]);
+		MM_SetLock((memptr *)&audiosegs[STARTMUSIC + chunk],true);
+		SD_StartMusic((MusicGroup id0_far *)audiosegs[STARTMUSIC + chunk]);
 	}
 }
 #endif
@@ -939,7 +940,9 @@ void PlayLoop (void)
 	SD_SetTimeCount(0);
 
 	PollControls ();				// center mouse
-//	StartMusic ();
+#ifdef __3DS__
+	StartMusic ();
+#endif
 	do
 	{
 #ifndef PROFILE
@@ -1342,7 +1345,9 @@ nextactor:;
 		//
 
 	}while (!playstate);
-//	StopMusic ();
+#ifdef __3DS__
+	StopMusic ();
+#endif
 
 #ifdef __3DS__
 	Cat3DS_DualScreenBeginLevelTransition();

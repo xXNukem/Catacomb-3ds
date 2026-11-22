@@ -23,6 +23,9 @@
 // ID_VW.C
 
 #include "id_heads.h"
+#if defined(__3DS__) && defined(REFKEEN_VER_CATACOMB_ALL)
+#include "cat3ds_menu.h"
+#endif
 
 REFKEEN_NS_B
 
@@ -195,6 +198,9 @@ Quit ("Improper video card!  If you really have a CGA card that I am not \n"
 
 void	VW_Shutdown (void)
 {
+#if defined(__3DS__) && defined(REFKEEN_VER_CATACOMB_ALL)
+	if (cat3dsSessionAction == CatSwitch) return; // DOS shell restoration only.
+#endif
 	VW_SetScreenMode (TEXTGR);
 #if GRMODE == EGAGR
 	VW_SetLineWidth (80);
@@ -1358,7 +1364,7 @@ id0_int_t VW_MarkUpdateBlock (id0_int_t x1, id0_int_t y1, id0_int_t x2, id0_int_
 
 	if (yt1<0)
 		yt1=0;
-	else if (yt1>UPDATEHIGH)
+	else if (yt1>=UPDATEHIGH)
 		return 0;
 
 	if (xt2<0)

@@ -12,9 +12,9 @@ typedef struct {
 static inline Cat3DSLayout Cat3DS_GetLayout(int adventure, int modal, int egaWidth)
 {
     /* DOS 320x200 fills a 4:3 display (pixel aspect 5:6).
-       The 320x120 world therefore occupies 400x180 LCD pixels. */
+       The central 240x120 aperture therefore fills the 400x240 LCD. */
     if (adventure && modal) return (Cat3DSLayout){egaWidth, 200, 320, 240};
-    if (adventure) return (Cat3DSLayout){320, 120, 400, 180};
+    if (adventure) return (Cat3DSLayout){240, 120, 400, 240};
     return (Cat3DSLayout){264, 144, 400, 240};
 }
 /* libctru stores LCD columns contiguously, bottom pixel first. */

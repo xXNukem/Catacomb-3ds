@@ -47,7 +47,9 @@
 
 #ifdef __3DS__
 #include "cat3ds_apocalypse.h"
-extern "C" int cat3dsSelectGame(void);
+#include "cat3ds_game_files.h"
+extern "C" int cat3dsSelectGame(Cat3DSInstallStatus *, int, const char *);
+extern "C" bool cat3dsPrepareVerifiedGame(int, int, const Cat3DSInstallStatus &);
 extern "C" int cat3dsPrepareAbyssCompatibility(void);
 #include <3ds.h>
 #include <unistd.h>
@@ -250,11 +252,6 @@ static int runSession(int argc, char **argv)
     /* Keep the original Catacomb 3DS EGA game-selection menu. The menu is
      * displayed before starting the ReflectionHLE engine, and is shut down
      * before BE_ST_InitCommon initializes SDL for the game itself. */
-    const int selectedCatacomb = cat3dsSelectGame();
-    if (selectedCatacomb < 0)
-        return 0;
-    osSetSpeedupEnable(true);
-
     static char *cat3dArgs[] = {
         (char *)"CAT3D", (char *)"-datadir",
         (char *)"sdmc:/3ds/catacomb-3ds/saves",
@@ -277,38 +274,39 @@ static int runSession(int argc, char **argv)
         (char *)"-cfgdir", (char *)"sdmc:/3ds/catacomb-3ds/config",
         (char *)"-gamever", (char *)CAT3DS_APOC_GAMEVER, NULL
     };
-    if (selectedCatacomb == 0)
-    {
-        if (chdir("sdmc:/3ds/catacomb-3ds/games/cat3d") != 0)
-            return 1;
-        argv = cat3dArgs;
-    }
-    else if (selectedCatacomb == 1)
-    {
-        if (chdir("sdmc:/3ds/catacomb-3ds/games/catabyss") != 0)
-            return 1;
-        const int edition = cat3dsPrepareAbyssCompatibility();
-        if (!edition)
-        {
-            /* No unverified EXE will be run. Return cleanly to Homebrew. */
-            return 1;
+    Cat3DSInstallStatus install = {};
+    int previous = 0;
+    const char *failure = nullptr;
+    for (;;) {
+        const int game = cat3dsSelectGame(&install, previous, failure);
+        if (game < 0) return 0;
+        previous = game;
+        if (chdir(cat3dsGameFolder(game)) != 0) {
+            failure = "Cannot enter selected game folder";
+            continue;
         }
-        abyssArgs[6] = (edition == 124) ?
-            (char *)"catabyss124:game" : (char *)"catabyss113:game";
-        argv = abyssArgs;
+        if (game == 1) {
+            const int edition = cat3dsPrepareAbyssCompatibility();
+            if (edition) {
+                abyssArgs[6] = edition == 124 ? (char *)"catabyss124:game" : (char *)"catabyss113:game";
+                argv = abyssArgs;
+                break;
+            }
+        } else {
+            const bool firstEdition = game == 0 && install.versionName &&
+                !strcmp(install.versionName, "Catacomb 3-D v1.00");
+            const int id = game == 0 ? (firstEdition ? BE_GAMEVER_CAT3D100 : BE_GAMEVER_CAT3D122) :
+                           game == 2 ? BE_GAMEVER_CATARM102 : BE_GAMEVER_CATAPOC101;
+            if (cat3dsPrepareVerifiedGame(game, id, install)) {
+                cat3dArgs[6] = firstEdition ? (char *)"cat3d100" : (char *)"cat3d122";
+                argv = game == 0 ? cat3dArgs : game == 2 ? armArgs : apocArgs;
+                break;
+            }
+        }
+        // No backend has started. The selector uses absolute SD paths and
+        // rescans before showing the diagnostic, including after card changes.
+        failure = "Gameplay descriptor recheck failed";
     }
-    else if (selectedCatacomb == 2)
-    {
-        if (chdir("sdmc:/3ds/catacomb-3ds/games/catarm") != 0) return 1;
-        argv = armArgs;
-    }
-    else if (selectedCatacomb == 3)
-    {
-        if (chdir(CAT3DS_APOC_GAME_PATH) != 0) return 1;
-        argv = apocArgs;
-    }
-    else
-        return 0;
     argc = 7;
 #endif
 #ifdef REFKEEN_CONFIG_ENABLE_CMDLINE

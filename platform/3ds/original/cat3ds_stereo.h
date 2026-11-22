@@ -24,7 +24,7 @@ static inline int Cat3DS_ActorVisible(const uint8_t *tiles, const uint8_t *visib
     return 0;
 }
 
-/* Per-eye displacement in 16.16 tile units. */
+/* Slider amplitude. Convert to a physical baseline for the active viewport. */
 static inline int Cat3DS_EyeOffset(float slider)
 {
     if (!(slider > 0.025f)) return 0;
@@ -32,9 +32,25 @@ static inline int Cat3DS_EyeOffset(float slider)
     return (int)((slider - 0.025f) * (1280.0f / 0.975f) + 0.5f);
 }
 
+#define CAT3DS_SCREEN_TILES 1.5
+/* At infinity the eye images differ by four of the 400 LCD pixels. */
+static inline int Cat3DS_Baseline(int amplitude, int visibleColumns, double focal)
+{
+    const double lcdFocal = focal * 400.0 / visibleColumns;
+    return (int)(amplitude / 1280.0 * 65536.0 * 4.0 * CAT3DS_SCREEN_TILES / (2.0 * lcdFocal));
+}
+
 static inline double Cat3DS_LensShift(double eyeTiles, double focalPixels)
 {
-    return eyeTiles * focalPixels / 1.25;
+    return eyeTiles * focalPixels / CAT3DS_SCREEN_TILES;
+}
+
+static inline int Cat3DS_LimitDepthOffset(int offset, double depth, int columns, double focal)
+{
+    if (depth >= CAT3DS_SCREEN_TILES) return offset;
+    if (depth <= 0.0) return 0;
+    const double lcdFocal = focal * 400.0 / columns;
+    return (int)fmin(offset, 65536.0 * 2.1 / (2.0 * lcdFocal * (1.0 / depth - 1.0 / CAT3DS_SCREEN_TILES)));
 }
 
 /* Bound crossed disparity at a near corner using a conservative lower
@@ -48,7 +64,7 @@ static inline int Cat3DS_LimitCornerOffset(int offset, const uint8_t *tiles, int
     const double slope = (columns * 0.5 + Cat3DS_LensShift(radius, focal)) / focal;
     const double rayLength = sqrt(1.0 + slope * slope);
     const int cx = (int)floor(ox), cy = (int)floor(oy);
-    double nearest = 1.0;
+    double nearest = CAT3DS_SCREEN_TILES;
     for (int x = cx - 2; x <= cx + 2; ++x) {
         for (int y = cy - 2; y <= cy + 2; ++y) {
             if (x < 0 || x >= width || y < 0 || y >= height ||
@@ -63,10 +79,28 @@ static inline int Cat3DS_LimitCornerOffset(int offset, const uint8_t *tiles, int
             nearest = fmin(nearest, (sqrt(ax*ax + ay*ay) - radius) / rayLength);
         }
     }
-    if (nearest <= 0.0) return 0;
-    const double lcdFocal = focal * 400.0 / columns;
-    return (int)fmin(offset, 65536.0 * 2.1 / (2.0 * lcdFocal * (1.0 / nearest - 0.8)));
+    return Cat3DS_LimitDepthOffset(offset, nearest, columns, focal);
 }
+
+#ifdef __cplusplus
+// A nearby sprite in open space also needs the crossed-disparity budget.
+template<class Actor>
+static int Cat3DS_LimitActorOffset(int offset, const Actor *player, double fx, double fy,
+                                   int columns, double focal)
+{
+    if (!offset) return 0;
+    for (const Actor *actor = player->next; actor; actor = actor->next) {
+        if (!actor->state || !actor->state->shapenum) continue;
+        const double dx = (actor->x - player->x) / 65536.0;
+        const double dy = (actor->y - player->y) / 65536.0;
+        const double z = dx*fx + dy*fy;
+        if (z <= 0 || z >= CAT3DS_SCREEN_TILES) continue;
+        if (fabs(dy*fx - dx*fy) <= z*columns/(2*focal) + actor->size/65536.0 + 0.5)
+            offset = Cat3DS_LimitDepthOffset(offset,z,columns,focal);
+    }
+    return offset;
+}
+#endif
 
 static inline int Cat3DS_WallTextureColumn(double worldHit, int hitSide,
                                     int stepX, int stepY)

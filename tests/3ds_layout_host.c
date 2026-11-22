@@ -31,9 +31,9 @@ static void check(int abyss, int modal, int w, int h, int outW, int outH)
 int main(void)
 {
     check(0, 0, 264, 144, 400, 240);
-    check(1, 0, 320, 120, 400, 180);
+    check(1, 0, 240, 120, 400, 240);
     check(1, 1, 640, 200, 320, 240);
     check(1, 1, 320, 200, 320, 240);
-    check(1, 0, 320, 120, 400, 180);
+    check(1, 0, 240, 120, 400, 240);
     puts("PASS: LCD layout, sampling, borders and stride padding");
 }

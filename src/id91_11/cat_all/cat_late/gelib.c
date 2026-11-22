@@ -2790,7 +2790,11 @@ void Presenter(PresenterInfo *pi)
 					endmsg.bgcolor = bgcolor;
 					endmsg.ltcolor = pi->ltcolor;
 					endmsg.dkcolor = pi->dkcolor;
+#ifdef __3DS__
+					endmsg.script[0] = (id0_char_t id0_far *)"^CE^FC8-  ^FC0B ^FC8to return to play, or ^FC0D-PAD ^FC8to page through more Help  -^XX";
+#else
 					endmsg.script[0] = (id0_char_t id0_far *)"^CE^FC8-  ^FC0ESC ^FC8to return to play, or ^FC0ARROW KEYS ^FC8to page through more Help  -^XX";
+#endif
 
 					pi_recursing = true;
 					Presenter(&endmsg);

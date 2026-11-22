@@ -810,7 +810,13 @@ USL_ConfirmComm(UComm comm)
 
 	// REFKEEN - Alternative controllers support
 	// (WARNING: Technically this belongs to USL_CtlDialog, but this is the only place where its returned value is actually checked)
-	if (dialog)
+	#if defined(__3DS__) && defined(REFKEEN_VER_CAT3D)
+    if (dialog) {
+        s2 = "A TO CONFIRM";
+        s3 = "B TO CANCEL";
+    }
+#endif
+    if (dialog)
 	{
 		extern BE_ST_ControllerMapping g_ingame_altcontrol_mapping_menu_confirm;
 		BE_ST_AltControlScheme_Push();

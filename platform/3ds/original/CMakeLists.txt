@@ -138,7 +138,7 @@ foreach(section data bss)
     message(FATAL_ERROR "Unsupported 3DS linker script: missing ${pattern}")
   endif()
   string(REPLACE "${pattern}"
-    "__cat3ds_${section}_begin = .;\n *cat3ds_engine_*.dir/*(.${section} .${section}.*)\n *cat3ds-original.dir/*/src/*(.${section} .${section}.*)\n __cat3ds_${section}_end = .;\n ${pattern}"
+    "__cat3ds_${section}_begin = .;\n *cat3ds_engine_*.dir/*(.${section} .${section}.*)\n *cat3ds-original.dir/*/src/*(.${section} .${section}.*)\n *cat3ds-original.dir/refkeen_original_main.*(.${section} .${section}.*)\n __cat3ds_${section}_end = .;\n ${pattern}"
     session_script "${session_script}")
 endforeach()
 set(session_dir "${CMAKE_CURRENT_BINARY_DIR}/generated/session")

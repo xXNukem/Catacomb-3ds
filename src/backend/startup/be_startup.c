@@ -170,7 +170,7 @@ static void BEL_Cross_LoadEXEImageToMem(void)
 	fclose(exeFp);
 	if (!success)
 	{
-		free(g_be_current_exeImage);
+		// The EXE image resides in static emulated DOS memory.
 		snprintf(
 			errorMsg, sizeof(errorMsg),
 			"decompExeImage: Failed to copy EXE in unpacked form!\n"
@@ -181,7 +181,7 @@ static void BEL_Cross_LoadEXEImageToMem(void)
 	int decompExeExtraMem = g_be_current_exeFileDetails->decompExeExtraMem;
 	if (decompExeExtraMem != 16*minExtraMemPara)
 	{
-		free(g_be_current_exeImage);
+		// The EXE image resides in static emulated DOS memory.
 		snprintf(
 			errorMsg, sizeof(errorMsg),
 			"decompExeImage: Unexpected difference within the EXE, in extra memory required.\n"

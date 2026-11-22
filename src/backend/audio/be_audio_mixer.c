@@ -334,32 +334,35 @@ void BEL_ST_AudioMixerCallback(BE_ST_SndSample_T *stream, int len)
 		{
 			int channels = g_stAudioMixer.channels;
 
-			for (i = 0; i < samplesToOutput; ++i, stream += channels)
+			// Amortize source locking while keeping volume and buffer reads coherent.
+			for (uint32_t base = 0; base < samplesToOutput; base += 64)
 			{
-				BE_ST_SndSamplesSum_T sums[2] = {
-					MIXER_SILENCE_SAMPLE,
-					MIXER_SILENCE_SAMPLE
-				};
+				BE_ST_SndSamplesSum_T sums[64][2] = {{0}};
+				int count = BE_Cross_TypedMin(uint32_t, 64, samplesToOutput - base);
 				for (j = 0; j < g_stAudioMixer.numSources; ++j)
 				{
 					src = &g_stAudioMixer.sources[j];
 					BE_ST_LockMutexRecursively(src->mutex);
 					if (!src->skip)
-					{
-						if (channels == 1)
-							sums[0] += src->out.buffer[i] * src->userVol *
-							           ((src->vol[0] + src->vol[1]) / 2.0f);
-						else
+						for (i = 0; i < count; ++i)
 						{
-							sums[0] += src->out.buffer[i] * src->userVol * src->vol[0];
-							sums[1] += src->out.buffer[i] * src->userVol * src->vol[1];
+							float sample = src->out.buffer[base+i] * src->userVol;
+							if (channels == 1)
+								sums[i][0] += sample * ((src->vol[0] + src->vol[1]) / 2.0f);
+							else
+							{
+								sums[i][0] += sample * src->vol[0];
+								sums[i][1] += sample * src->vol[1];
+							}
 						}
-					}
 					BE_ST_UnlockMutexRecursively(src->mutex);
 				}
-				stream[0] = BEL_ST_SamplesSumClamp(sums[0]);
-				if (channels != 1)
-					stream[1] = BEL_ST_SamplesSumClamp(sums[1]);
+				for (i = 0; i < count; ++i, stream += channels)
+				{
+					stream[0] = BEL_ST_SamplesSumClamp(sums[i][0]);
+					if (channels == 2)
+						stream[1] = BEL_ST_SamplesSumClamp(sums[i][1]);
+				}
 			}
 
 			for (j = 0; j < g_stAudioMixer.numSources; ++j)

@@ -652,6 +652,9 @@ void Victory (void)
 
 void Died (void)
 {
+#ifdef __3DS__
+	Cat3DS_DualScreenBeginLevelTransition();
+#endif
 	//id0_unsigned_t page1,page2;
 //
 // fizzle fade screen to grey

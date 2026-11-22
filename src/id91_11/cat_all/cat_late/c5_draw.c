@@ -1586,7 +1586,8 @@ void TransformActor (objtype *ob)
 //
   gxt = FixedByFrac(gx,viewcos);
   gyt = FixedByFrac(gy,viewsin);
-  nx = gxt-gyt-ob->size;
+  const fixed centerDepth = gxt-gyt;
+  nx = centerDepth-ob->size;
 
 //
 // calculate newy
@@ -1608,7 +1609,12 @@ void TransformActor (objtype *ob)
 
     ob->viewx = CENTERX + ny/ratio;
 
+#ifdef CAT3DS_ADVENTURE_CAMERA
+  // Clip sprites in front of the camera to the largest available scaler.
+  ob->viewheight = centerDepth > 0 ? (id0_unsigned_t)fmin(VIEWWIDTH, TILEGLOBAL/ratio) : 0;
+#else
   ob->viewheight = TILEGLOBAL/ratio;
+#endif
 }
 
 //==========================================================================
@@ -2284,6 +2290,10 @@ asm	rep stosw
 	fineviewangle = viewangle*(FINEANGLES/ANGLES);
 	viewsin = sintable[viewangle];
 	viewcos = costable[viewangle];
+#ifdef CAT3DS_ADVENTURE_CAMERA
+    viewx = player->x;
+    viewy = player->y;
+#else
 	viewx = player->x - FixedByFrac(FOCALLENGTH,viewcos);
 	viewy = player->y + FixedByFrac(FOCALLENGTH,viewsin);
 	viewx &= 0xfffffc00;		// stop on a pixel boundary
@@ -2326,6 +2336,7 @@ asm	rep stosw
 
 	if (aborttrace)
 		goto restart;
+#endif
 
 //
 // actually draw stuff

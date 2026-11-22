@@ -170,6 +170,7 @@ void BEL_Cross_ConditionallyAddGameInstallation_WithReturnedErrMsg(
 	{
 #if defined(__3DS__) && defined(REFKEEN_HAS_VER_CATAPOC)
         if (details->verId == BE_GAMEVER_CATAPOC101 &&
+            (!details->exeFiles || !details->exeFiles[0].subGameVerStr) &&
             !cat3dsApocalypseGameplayFile(fileDetailsBuffer->filenames))
             continue;
 #endif

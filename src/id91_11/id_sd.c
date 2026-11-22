@@ -52,7 +52,7 @@
 // more is actually disabled, not just empty function stubs
 // disabled (closer to Apocalypse, but more is disabled).
 
-#ifdef REFKEEN_VER_CATADVENTURES
+#if defined(REFKEEN_VER_CATADVENTURES) && !defined(__3DS__)
 #define USE_MUSIC	0
 #else
 #define USE_MUSIC	1

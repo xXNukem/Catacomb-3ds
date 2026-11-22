@@ -23,7 +23,10 @@ for game, entry in zip(("cat3d", "catabyss", "catarm", "catapoc"),
     for name, (address, kind) in symbols.items():
         if name.startswith(game + "::") and kind.lower() in ("d", "b"):
             assert address in (data if kind.lower() == "d" else bss), name
-for name in ("g_refKeenCfg", "g_be_emulatedMemSpace", "g_be_selectedGameInstallation"):
+assert symbols["g_be_gamever_ptrs"][0] in data  # Abyss patches its edition descriptor.
+for name in ("g_refKeenCfg", "g_be_emulatedMemSpace", "g_be_selectedGameInstallation",
+             "g_be_argc", "g_be_argv", "be_lastSetMainFuncPtr", "refkeen_current_gamever",
+             "be_main_arg_datadir", "be_main_arg_newcfgdir"):
     assert symbols[name][0] in bss
 for name in ("cat3dsSessionAction", "workerThread", "initPerformance()::exitHookRegistered"):
     address = symbols[name][0]

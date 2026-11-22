@@ -7,6 +7,7 @@ enum { CAT3DS_GAME_COUNT = 4 };
 
 typedef struct Cat3DSInstallStatus {
     const char *versionName;
+    const char *detectedEdition;
     const char *firstProblemFile;
     const char *firstProblemReason;
     int directoryFound;
@@ -34,6 +35,7 @@ typedef struct Cat3DSInstallStatus {
     bool resourceGraphicsValid;
     bool resourceAudioMapsPresent;
     bool resourceLayoutValid;
+    bool compatibleGameTables;
     bool resourceShapesPresent;
     char resourceExeName[128];
     char resourceIssue[128];
@@ -46,6 +48,7 @@ bool cat3dsCanLaunchApocalypse(const Cat3DSInstallStatus &status);
 bool cat3dsCanLaunchArmageddon(const Cat3DSInstallStatus &status);
 const char *cat3dsGameName(int game);
 const char *cat3dsGameFolder(int game);
+void cat3dsScanInstallation(int game, Cat3DSInstallStatus &status);
 void cat3dsScanInstallations(Cat3DSInstallStatus out[CAT3DS_GAME_COUNT]);
 /* Creates missing SD folders only; never deletes, clears or overwrites files.
  * On failure, failedPath points to a constant string. */

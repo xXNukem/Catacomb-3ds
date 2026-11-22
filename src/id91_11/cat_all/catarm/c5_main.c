@@ -1312,6 +1312,11 @@ void PrintHelp(void)
 	fontcolor = (7 ^ 4);
 	US_Print ("         ACTION\n\n");
 
+#ifdef __3DS__
+    US_Print ("Circle Pad, C-Stick or D-pad\nR while turning\nB or L while turning\n");
+    US_Print ("A\nY\nZL\nZR + Up\nZR + Right\nZR + Down\nZR + Left\n");
+    US_Print ("X\nSTART\n\n");
+#else
 	US_Print ("Arrow keys, joystick, or mouse\n");
 	US_Print ("TAB or V while turning\n");
 	US_Print ("ALT or Button 2 while turning\n");
@@ -1324,6 +1329,7 @@ void PrintHelp(void)
 	US_Print ("F4\n");
 	US_Print ("F5\n");
 	US_Print ("ESC\n\n");
+#endif
 #ifndef CATALOG
 	fontcolor = (7 ^ 0);
 	US_Print ("          (See complete Instructions for more info)\n");
@@ -1344,7 +1350,11 @@ void PrintHelp(void)
 	US_Print ("Sound control\n");
 	US_Print ("Save game position\n");
 	US_Print ("Restore a saved game\n");
+#ifdef __3DS__
+    US_Print ("Drink a cure potion\n");
+#else
 	US_Print ("Joystick control\n");
+#endif
 	US_Print ("System options\n\n\n");
 
 	VW_UpdateScreen();

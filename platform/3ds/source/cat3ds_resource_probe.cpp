@@ -10,6 +10,7 @@
  * versions. Error conditions must not be treated as proof of corruption.
  */
 #include "cat3ds_resource_probe.h"
+#include "../../../src/unlzexe/unlzexe_signature.h"
 
 #include <stdint.h>
 #include <stdio.h>
@@ -140,23 +141,50 @@ struct LzBits {
 /* LZEXE 0.90/0.91 image decoding. We only need the DOS load image,
  * not its relocations or a new executable. Limits protect against invalid
  * input and distinguish large game EXEs from small intro/helper programs. */
-bool unpackGameExe(const std::vector<uint8_t> &file, std::vector<uint8_t> &image)
+bool unpackGameExe(const std::vector<uint8_t> &file, std::vector<uint8_t> &image, bool &plainMZ,
+                   const char **detail = nullptr)
 {
-    if (file.size() < 64 || (u16(file.data()) != 0x5a4d && u16(file.data()) != 0x4d5a))
+    const auto reject = [&](const char *reason) {
+        if (detail) *detail = reason;
         return false;
+    };
+    if (file.size() < 64 || (u16(file.data()) != 0x5a4d && u16(file.data()) != 0x4d5a))
+        return reject("unrecognized DOS MZ header");
     const uint16_t headerParagraphs = u16(&file[8]);
     const uint16_t packedCS = u16(&file[22]);
     const uint16_t packedIP = u16(&file[20]);
     const size_t entry = (size_t(headerParagraphs) + packedCS) * 16u + packedIP;
     const size_t metadata = (size_t(headerParagraphs) + packedCS) * 16u;
-    static const uint8_t signature[] = {0x06, 0x0e, 0x1f, 0x8b, 0x0e, 0x0c, 0x00, 0x8b};
-    if (entry + sizeof(signature) > file.size() || metadata + 16 > file.size() ||
-        memcmp(file.data() + entry, signature, sizeof(signature)))
-        return false;
+    plainMZ = entry >= file.size() ||
+              !Unlzexe_signatureVersion(file.data() + entry, file.size() - entry);
+    const unsigned pages = u16(&file[4]), tail = u16(&file[2]);
+    if (!pages || tail >= 512 || (pages - 1u) * 512u + (tail ? tail : 512u) > file.size())
+        return reject("truncated MZ or invalid page count");
+    if (plainMZ) {
+        const size_t header = size_t(headerParagraphs) * 16;
+        const size_t relocEnd = u16(&file[24]) + size_t(u16(&file[6])) * 4;
+        if (header < 28 || header > file.size() ||
+            relocEnd > header || u16(&file[10]) != 0 || u16(&file[26]) != 0 ||
+            (pages - 1u) * 512u + (tail ? tail : 512u) != file.size() ||
+            entry < header || entry >= file.size() ||
+            file.size() - header < 120000 || file.size() - header > 300000) return reject("unsupported MZ header, allocation or image extent");
+        image.assign(file.begin() + header, file.end());
+        return true;
+    }
+    if (u16(&file[24]) != 0x1c || u16(&file[26]) || metadata + 16 > file.size())
+        return reject("LZEXE header/metadata offset invalid");
+    // The four linked DOS families reserve no extra paragraphs. Match the
+    // original loader's restored minimum allocation before offering launch.
+    const unsigned minimum = u16(&file[10]);
+    if (u16(&file[12])) {
+        const unsigned packedOverhead = u16(&file[metadata+10]) +
+                                       (u16(&file[metadata+12])+15u)/16u + 9u;
+        if (minimum != packedOverhead) return reject("LZEXE minimum allocation mismatch");
+    } else if (minimum != 0) return reject("LZEXE minimum allocation mismatch");
     const uint16_t compressedParagraphs = u16(&file[metadata + 8]);
     const int64_t start = (int64_t(packedCS) - compressedParagraphs + headerParagraphs) * 16;
     if (start < 0 || size_t(start) + 2 > file.size())
-        return false;
+        return reject("LZEXE stream offset outside file");
     LzBits stream(file, size_t(start));
     image.clear();
     image.reserve(210000);
@@ -199,7 +227,9 @@ bool unpackGameExe(const std::vector<uint8_t> &file, std::vector<uint8_t> &image
         for (int i = 0; i < length; ++i)
             image.push_back(image[image.size() + displacement]);
     }
-    return finished && image.size() >= 120000 && image.size() <= limit;
+    if (!finished) return reject("LZEXE stream truncated or invalid");
+    if (image.size() < 120000 || image.size() > limit) return reject("LZEXE load image size unsupported");
+    return true;
 }
 
 /* Structural EGAHEAD check: one 24-bit start offset per chunk plus
@@ -319,17 +349,19 @@ struct DecodedResources {
     std::vector<uint8_t> statusGraphic;
     unsigned dictOff;
     unsigned headOff;
+    unsigned graphicsSize, graphicsCrc, audioSize, audioArchiveCrc, mapsSize, mapsArchiveCrc;
     unsigned imageSize;
     bool embeddedLayoutValid;
+    bool plainMZ;
     unsigned audioDictOffset, audioHeadOffset, mapHeadOffset;
     unsigned audioDictCrc, audioHeadCrc, egaDictCrc, egaHeadCrc, mapHeadCrc;
     char exeName[128];
     char graphicsName[128];
 };
 
-uint32_t crcBuffer(const uint8_t *data, size_t n)
+uint32_t crcBuffer(const uint8_t *data, size_t n, uint32_t previous = 0)
 {
-    uint32_t crc = 0xffffffffu;
+    uint32_t crc = ~previous;
     for (size_t i = 0; i < n; ++i)
     {
         crc ^= data[i];
@@ -594,16 +626,19 @@ bool locateEmbeddedTables(const std::vector<uint8_t> &image,
                           char *reason, size_t reasonSize)
 {
     std::vector<uint8_t> audio, maps;
-    if (!openArchive(folder, kExtensions[game], "AUDIO", audio) ||
-        !openArchive(folder, kExtensions[game], "GAMEMAPS", maps))
+    if (!openArchive(folder, kExtensions[game], "AUDIO", audio)) {
+        snprintf(reason, reasonSize, "AUDIO.%s missing, unreadable or oversized", kExtensions[game]);
+        return false;
+    }
+    if (!openArchive(folder, kExtensions[game], "GAMEMAPS", maps))
     {
-        setMessage(reason, reasonSize, "Cannot read AUDIO/GAMEMAPS");
+        snprintf(reason, reasonSize, "GAMEMAPS.%s missing, unreadable or oversized", kExtensions[game]);
         return false;
     }
     static const int audioHeadDelta[] = {0, -0x1a0, -0x1b0, -0x1d0};
     // Verified against be_gamedefs_catabyss.h (both v1.13/v1.24):
-    // MTEMP - EGAHEAD = 0x1ab10 - 0x1a3b0 = -0x8a0.
-    static const int mapHeadDelta[]   = {0, -0x8a0, -0x500, -0x520};
+    // MTEMP - EGAHEAD = 0x1ab10 - 0x1a3b0 = +0x760.
+    static const int mapHeadDelta[]   = {0, 0x760, -0x500, -0x520};
     static const size_t audioHeadSize[] = {0, 416, 428, 452};
     const size_t count = audioHeadSize[game] / 4;
     const int64_t referenceAudio = int64_t(egaHead) + audioHeadDelta[game];
@@ -621,8 +656,11 @@ bool locateEmbeddedTables(const std::vector<uint8_t> &image,
     static const uint32_t knownHeadCrc[] = {
         0u, 0xfbfff495u, 0x5f863ad2u, 0x76adb051u
     };
-    const bool knownArchive =
-        crcBuffer(audio.data(), audio.size()) == knownArchiveCrc[game];
+    result.audioSize = unsigned(audio.size());
+    result.mapsSize = unsigned(maps.size());
+    result.audioArchiveCrc = crcBuffer(audio.data(), audio.size());
+    result.mapsArchiveCrc = crcBuffer(maps.data(), maps.size());
+    const bool knownArchive = result.audioArchiveCrc == knownArchiveCrc[game];
     const auto knownHead = [&](size_t at) {
         return at <= image.size() &&
             audioHeadSize[game] <= image.size() - at &&
@@ -649,7 +687,8 @@ bool locateEmbeddedTables(const std::vector<uint8_t> &image,
     static const uint32_t knownMapCrc[] = {
         0u, 0x5d9ccfb3u, 0x546f00d1u, 0x90742162u
     };
-    if (referenceMap >= 0 && size_t(referenceMap) <= image.size() &&
+    static const uint32_t knownMaps[] = {0, 0x97ddb354, 0x787794bf, 0xd317b2c9};
+    if (result.mapsArchiveCrc == knownMaps[game] && referenceMap >= 0 && size_t(referenceMap) <= image.size() &&
         image.size() - size_t(referenceMap) >= 834 &&
         crcBuffer(image.data() + size_t(referenceMap), 834) == knownMapCrc[game])
         mapHeads.push_back(size_t(referenceMap));
@@ -854,7 +893,22 @@ bool loadResources(int game, const char *folder, DecodedResources &res,
         setMessage(problem, cap, "Cannot list game folder");
         return false;
     }
-    bool foundCandidate = false;
+    res.graphicsSize = unsigned(graphLength);
+    uint8_t block[4096];
+    rewind(graphics);
+    for (long left = graphLength; left > 0;) {
+        const size_t n = size_t(left) < sizeof(block) ? size_t(left) : sizeof(block);
+        if (fread(block, 1, n, graphics) != n) {
+            closedir(dir);
+            fclose(graphics);
+            setMessage(problem, cap, "EGAGRAPH: incomplete read");
+            return false;
+        }
+        res.graphicsCrc = crcBuffer(block, n, res.graphicsCrc);
+        left -= n;
+    }
+    int progress = 0;
+    setMessage(problem, cap, "Gameplay EXE missing");
     struct dirent *entry;
     while ((entry = readdir(dir)))
     {
@@ -864,14 +918,23 @@ bool loadResources(int game, const char *folder, DecodedResources &res,
         char path[320];
         if (!pathFor(path, sizeof(path), folder, name)) continue;
         std::vector<uint8_t> exeFile, image;
-        if (!readFile(path, exeFile, 600000) || exeFile.size() < 45000 ||
-            !unpackGameExe(exeFile, image))
+        auto failure = [&](int stage, const char *why) {
+            if (stage <= progress) return;
+            progress = stage;
+            snprintf(problem, cap, "%.32s: %s", name, why);
+        };
+        bool plainMZ = false;
+        if (!readFile(path, exeFile, 600000)) { failure(1, "read error or size >600000"); continue; }
+        if (exeFile.size() < 45000) { failure(2, "too small for gameplay EXE"); continue; }
+        const char *detail;
+        if (!unpackGameExe(exeFile, image, plainMZ, &detail)) {
+            failure(3, detail);
             continue;
-        foundCandidate = true;
+        }
         std::vector<uint32_t> offsets;
         size_t headOff = 0;
-        if (!findHead(image, uint32_t(graphLength), kChunks[game], headOff, offsets))
-            continue;
+        if (!findHead(image, uint32_t(graphLength), kChunks[game], headOff, offsets)) { failure(4, "EGAHEAD: no offsets matching EGAGRAPH"); continue; }
+        failure(5, "EGADICT: pictable or STATUSPIC decode/size");
         // Take the tree that can decode the picture table and the status
         // graphic. The other matching 255-node tree is usually for audio.
         for (size_t off = 0; off + 1024 <= image.size(); off += 2)
@@ -903,8 +966,9 @@ bool loadResources(int game, const char *folder, DecodedResources &res,
             char tableProblem[128] = {};
             res.embeddedLayoutValid = locateEmbeddedTables(image, off, headOff,
                  folder, game, res, tableProblem, sizeof(tableProblem));
-            setMessage(problem, cap, tableProblem);
+            if (!res.embeddedLayoutValid) failure(6, tableProblem);
             res.imageSize = unsigned(image.size());
+            res.plainMZ = plainMZ;
             res.headOff = unsigned(headOff);
             res.dictOff = unsigned(off);
             snprintf(res.exeName, sizeof(res.exeName), "%s", name);
@@ -912,18 +976,16 @@ bool loadResources(int game, const char *folder, DecodedResources &res,
             res.offsets.swap(offsets);
             res.pictable.swap(pics);
             res.statusGraphic.swap(status);
+            if (!res.embeddedLayoutValid) break;
             closedir(dir);
             fclose(graphics);
-            if (res.embeddedLayoutValid)
-                setMessage(problem, cap, "Graphics and EXE tables verified");
+            setMessage(problem, cap, "Graphics and EXE tables verified");
             return true;
         }
     }
     closedir(dir);
     fclose(graphics);
-    setMessage(problem, cap, foundCandidate ?
-               "EGA tables/pictures not compatible" :
-               "No compatible LZEXE game EXE found");
+    if (res.exeName[0]) return true;
     return false;
 }
 
@@ -939,7 +1001,14 @@ void cat3dsProbeResources(int game, const char *folder, Cat3DSResourceProbe *out
     if (!out->graphicsValid) return;
     snprintf(out->exeName, sizeof(out->exeName), "%s", resources.exeName);
     snprintf(out->graphicsName, sizeof(out->graphicsName), "%s", resources.graphicsName);
+    out->graphicsSize = resources.graphicsSize;
+    out->graphicsCrc = resources.graphicsCrc;
+    out->audioSize = resources.audioSize;
+    out->mapsSize = resources.mapsSize;
+    out->audioArchiveCrc = resources.audioArchiveCrc;
+    out->mapsArchiveCrc = resources.mapsArchiveCrc;
     out->imageSize = resources.imageSize;
+    out->plainMZ = resources.plainMZ;
     out->dictOffset = resources.dictOff;
     out->headOffset = resources.headOff;
     out->embeddedLayoutValid = resources.embeddedLayoutValid;
@@ -956,9 +1025,6 @@ void cat3dsProbeResources(int game, const char *folder, Cat3DSResourceProbe *out
     const bool audio = findFile(folder, name, found);
     snprintf(name, sizeof(name), "GAMEMAPS.%s", kExtensions[game]);
     out->audioAndMapsPresent = audio && findFile(folder, name, found);
-    if (!out->audioAndMapsPresent)
-        setMessage(out->problem, sizeof(out->problem),
-                   "Graphics OK, but AUDIO or GAMEMAPS missing");
 }
 
 bool cat3dsShowOriginalStatusGraphic(int game, const char *folder,
